@@ -1,7 +1,7 @@
 use crate::db::AppState;
 use crate::models::{Lesson, LessonInput, LessonStudent, LessonStudentInput, OverlapInfo, Reminder};
 use chrono::{DateTime, Duration, Utc};
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 use uuid::Uuid;
 use validator::Validate;
 const LESSON_SELECT: &str = "SELECT id, student_name, subject, start_at, duration_minutes, cost, currency, link, notes, materials, materials_link, status, payment_status, recurrence_rule, recurrence_parent_id, recurrence_instance_date, color, created_at, updated_at";
@@ -161,6 +161,7 @@ fn exception_status_rank(status: &str) -> i32 {
 }
 
 /// Remove duplicate exception rows across the whole DB (same parent + instance slot).
+#[allow(clippy::type_complexity)]
 pub(crate) fn dedupe_all_exception_slots(conn: &Connection) -> Result<(), String> {
     let mut stmt = conn
         .prepare(
@@ -349,6 +350,45 @@ pub fn create_lesson(
         return Err(format!("Ошибка валидации: {}", errors));
     }
 
+    if !input.force {
+        let parent = input
+            .recurrence_parent_id
+            .as_ref()
+            .filter(|s| !s.is_empty());
+        let instance = input
+            .recurrence_instance_date
+            .as_ref()
+            .filter(|s| !s.is_empty());
+        let moved = match (parent, instance) {
+            (Some(_), Some(inst)) => {
+                match (
+                    inst.parse::<DateTime<Utc>>(),
+                    input.start_at.parse::<DateTime<Utc>>(),
+                ) {
+                    (Ok(slot), Ok(start)) => slot.timestamp() != start.timestamp(),
+                    _ => true,
+                }
+            }
+            _ => false,
+        };
+        if parent.is_none() || moved {
+            let start: DateTime<Utc> = input
+                .start_at
+                .parse::<DateTime<Utc>>()
+                .map_err(|e: chrono::ParseError| e.to_string())?;
+            let exclude = match (parent, instance) {
+                (Some(p), Some(inst)) => Some(format!("{p}::{inst}")),
+                _ => None,
+            };
+            let overlaps = state.pool.with_conn(|conn| {
+                find_overlaps(conn, start, input.duration_minutes, exclude.as_deref())
+            })?;
+            if let Some(err) = overlap_error(&overlaps) {
+                return Err(err);
+            }
+        }
+    }
+
     // Exception for a series slot: update existing row instead of creating duplicates.
     if let (Some(parent_id), Some(instance_date)) = (
         input
@@ -486,6 +526,39 @@ pub fn update_lesson(
     if let Err(errors) = input.validate() {
         return Err(format!("Ошибка валидации: {}", errors));
     }
+    if !input.force {
+        let stored: Option<(String, i64)> = state.pool.with_conn(|conn| {
+            conn.query_row(
+                "SELECT start_at, duration_minutes FROM lessons WHERE id = ?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| e.to_string())
+        })?;
+        if let Some((old_start, old_duration)) = stored {
+            let changed = old_duration != input.duration_minutes
+                || match (
+                    old_start.parse::<DateTime<Utc>>(),
+                    input.start_at.parse::<DateTime<Utc>>(),
+                ) {
+                    (Ok(a), Ok(b)) => a.timestamp() != b.timestamp(),
+                    _ => old_start != input.start_at,
+                };
+            if changed {
+                let start: DateTime<Utc> = input
+                    .start_at
+                    .parse::<DateTime<Utc>>()
+                    .map_err(|e: chrono::ParseError| e.to_string())?;
+                let overlaps = state.pool.with_conn(|conn| {
+                    find_overlaps(conn, start, input.duration_minutes, Some(id.as_str()))
+                })?;
+                if let Some(err) = overlap_error(&overlaps) {
+                    return Err(err);
+                }
+            }
+        }
+    }
     let now = Utc::now().to_rfc3339();
     state.pool.with_conn(|conn| {
         conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
@@ -616,25 +689,35 @@ pub fn update_lesson_status(
 ) -> Result<Lesson, String> {
     let now = Utc::now().to_rfc3339();
     state.pool.with_conn(|conn| {
-        if let Some(ps) = payment_status.clone() {
-            conn.execute(
-                "UPDATE lessons SET status = ?2, payment_status = ?3, updated_at = ?4 WHERE id = ?1",
-                params![id, status, ps, now],
-            )
-            .map_err(|e| e.to_string())?;
-            conn.execute(
-                "UPDATE lesson_students SET payment_status = ?2 WHERE lesson_id = ?1",
-                params![id, ps],
-            )
-            .ok();
-        } else {
-            conn.execute(
-                "UPDATE lessons SET status = ?2, updated_at = ?3 WHERE id = ?1",
-                params![id, status, now],
-            )
-            .map_err(|e| e.to_string())?;
+        conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            if let Some(ps) = payment_status.clone() {
+                conn.execute(
+                    "UPDATE lessons SET status = ?2, payment_status = ?3, updated_at = ?4 WHERE id = ?1",
+                    params![id, status, ps, now],
+                )
+                .map_err(|e| e.to_string())?;
+                conn.execute(
+                    "UPDATE lesson_students SET payment_status = ?2 WHERE lesson_id = ?1",
+                    params![id, ps],
+                )
+                .map_err(|e| e.to_string())?;
+            } else {
+                conn.execute(
+                    "UPDATE lessons SET status = ?2, updated_at = ?3 WHERE id = ?1",
+                    params![id, status, now],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => conn.execute_batch("COMMIT").map_err(|e| e.to_string()),
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
         }
-        Ok(())
     })?;
     get_lesson(state, id)
 }
@@ -645,16 +728,40 @@ pub fn check_overlaps(
     duration_minutes: i64,
     exclude_id: Option<String>,
 ) -> Result<Vec<OverlapInfo>, String> {
-    use crate::recurrence::{expand_weekly_starts, intervals_overlap, is_weekly};
-
     let start: DateTime<Utc> = start_at
         .parse::<DateTime<Utc>>()
         .map_err(|e: chrono::ParseError| e.to_string())?;
+    state.pool.with_conn(|conn| {
+        find_overlaps(conn, start, duration_minutes, exclude_id.as_deref())
+    })
+}
+
+fn overlap_error(overlaps: &[OverlapInfo]) -> Option<String> {
+    if overlaps.is_empty() {
+        return None;
+    }
+    let mut names: Vec<String> = Vec::new();
+    for o in overlaps {
+        if !names.contains(&o.student_name) {
+            names.push(o.student_name.clone());
+        }
+    }
+    Some(format!("OVERLAP:{}", names.join(", ")))
+}
+
+pub(crate) fn find_overlaps(
+    conn: &Connection,
+    start: DateTime<Utc>,
+    duration_minutes: i64,
+    exclude_id: Option<&str>,
+) -> Result<Vec<OverlapInfo>, String> {
+    use crate::recurrence::{expand_weekly_starts, intervals_overlap, is_weekly};
+
     let end = start + Duration::minutes(duration_minutes);
     let range_from = start - Duration::days(1);
     let range_to = end + Duration::days(8);
 
-    state.pool.with_conn(|conn| {
+    {
         // Include cancelled *exceptions* so deleted series slots stay in the skip list.
         // (Deleting a recurring instance creates status=cancelled with recurrence_parent_id.)
         let mut stmt = conn
@@ -687,20 +794,16 @@ pub fn check_overlaps(
         let mut parents = Vec::new();
         let mut regular = Vec::new();
 
-        let (exclude_series_id, exclude_instance_at) = match exclude_id.as_ref() {
-            Some(ex) if ex.contains("::") => {
-                let (pid, inst) = ex.split_once("::").unwrap();
-                let dt = inst.parse::<DateTime<Utc>>().ok();
-                (Some(pid.to_string()), dt)
-            }
-            _ => (None, None),
-        };
+        let (exclude_series_id, exclude_instance_at) = exclude_id
+            .and_then(|ex| ex.split_once("::"))
+            .map(|(pid, inst)| (Some(pid.to_string()), inst.parse::<DateTime<Utc>>().ok()))
+            .unwrap_or((None, None));
 
         for row in rows {
             let (id, student_name, other_start, other_dur, recurrence_rule, parent_id, instance_date, status) =
                 row.map_err(|e| e.to_string())?;
 
-            let excluded = Some(&id) == exclude_id.as_ref();
+            let excluded = Some(id.as_str()) == exclude_id;
             let is_cancelled = status == "cancelled";
 
             let other_start: DateTime<Utc> = other_start
@@ -756,7 +859,7 @@ pub fn check_overlaps(
             let starts = expand_weekly_starts(anchor, &rule, range_from, range_to);
             let skipped = exceptions.get(&id).cloned().unwrap_or_default();
             for instance_start in starts {
-                if skipped.iter().any(|d| *d == instance_start) {
+                if skipped.contains(&instance_start) {
                     continue;
                 }
                 if exclude_series_id.as_ref() == Some(&id)
@@ -777,10 +880,10 @@ pub fn check_overlaps(
         }
 
         Ok(overlaps)
-    })
+    }
 }
 
-fn setting_timezone(conn: &rusqlite::Connection) -> String {
+pub(crate) fn setting_timezone(conn: &rusqlite::Connection) -> String {
     conn.query_row(
         "SELECT value FROM settings WHERE key = 'timezone'",
         [],
@@ -814,4 +917,64 @@ pub fn get_today_lessons(state: tauri::State<AppState>) -> Result<Vec<Lesson>, S
         today_bounds_in_tz(&tz)
     })?;
     get_lessons(state, from.to_rfc3339(), to.to_rfc3339())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        conn
+    }
+
+    fn insert_lesson(
+        conn: &Connection,
+        id: &str,
+        student_name: &str,
+        start_at_rfc3339: &str,
+        duration_minutes: i64,
+        status: &str,
+    ) {
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO lessons (id, student_name, subject, start_at, duration_minutes, status, payment_status, created_at, updated_at)
+             VALUES (?1, ?2, 'Math', ?3, ?4, ?5, 'unpaid', ?6, ?6)",
+            params![id, student_name, start_at_rfc3339, duration_minutes, status, now],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn find_overlaps_detects_regular_conflict() {
+        let conn = test_conn();
+        insert_lesson(&conn, "l1", "Ivan", "2026-03-10T10:00:00Z", 60, "scheduled");
+        insert_lesson(&conn, "l2", "Maria", "2026-03-10T10:30:00Z", 60, "scheduled");
+        let overlaps = find_overlaps(
+            &conn,
+            "2026-03-10T10:30:00Z".parse().unwrap(),
+            60,
+            Some("l2"),
+        )
+        .unwrap();
+        assert_eq!(overlaps.len(), 1);
+        assert_eq!(overlaps[0].id, "l1");
+    }
+
+    #[test]
+    fn find_overlaps_excludes_self_and_cancelled() {
+        let conn = test_conn();
+        insert_lesson(&conn, "l1", "Ivan", "2026-03-10T10:00:00Z", 60, "scheduled");
+        insert_lesson(&conn, "l2", "Maria", "2026-03-10T10:00:00Z", 60, "cancelled");
+        let overlaps = find_overlaps(
+            &conn,
+            "2026-03-10T10:00:00Z".parse().unwrap(),
+            60,
+            Some("l1"),
+        )
+        .unwrap();
+        assert!(overlaps.is_empty());
+    }
 }

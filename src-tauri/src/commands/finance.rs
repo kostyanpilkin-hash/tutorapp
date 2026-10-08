@@ -1,9 +1,10 @@
 use crate::db::AppState;
 use crate::models::{
-    CurrencyAmount, FinanceReport, SubjectAmount, TimelinePoint,
+    CurrencyAmount, DebtEntry, FinanceReport, SubjectAmount, TimelinePoint,
 };
 use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc};
-use rusqlite::params;
+use chrono_tz::Tz;
+use rusqlite::{params, Connection};
 use std::collections::BTreeMap;
 
 #[derive(Clone)]
@@ -34,17 +35,35 @@ struct FinanceEntry {
     currency: String,
 }
 
-fn period_bounds(period: &str, anchor: DateTime<Utc>) -> (DateTime<Utc>, DateTime<Utc>) {
-    let date = anchor.date_naive();
-    match period {
+fn local_bound(tz: Tz, date: NaiveDate, end_of_day: bool) -> Option<DateTime<Utc>> {
+    let time = if end_of_day {
+        date.and_hms_opt(23, 59, 59).unwrap()
+    } else {
+        date.and_hms_opt(0, 0, 0).unwrap()
+    };
+    tz.from_local_datetime(&time)
+        .single()
+        .or_else(|| tz.from_local_datetime(&time).earliest())
+        .or_else(|| tz.from_local_datetime(&time).latest())
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn utc_bound(date: NaiveDate, end_of_day: bool) -> DateTime<Utc> {
+    let time = if end_of_day {
+        date.and_hms_opt(23, 59, 59).unwrap()
+    } else {
+        date.and_hms_opt(0, 0, 0).unwrap()
+    };
+    Utc.from_utc_datetime(&time)
+}
+
+fn period_bounds(period: &str, anchor: DateTime<Utc>, tz: Tz) -> (DateTime<Utc>, DateTime<Utc>) {
+    let date = anchor.with_timezone(&tz).date_naive();
+    let (start, end) = match period {
         "week" => {
             let weekday = date.weekday().num_days_from_monday() as i64;
             let start = date - Duration::days(weekday);
-            let end = start + Duration::days(6);
-            (
-                Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap()),
-                Utc.from_utc_datetime(&end.and_hms_opt(23, 59, 59).unwrap()),
-            )
+            (start, start + Duration::days(6))
         }
         "month" => {
             let start = NaiveDate::from_ymd_opt(date.year(), date.month(), 1).unwrap();
@@ -53,28 +72,18 @@ fn period_bounds(period: &str, anchor: DateTime<Utc>) -> (DateTime<Utc>, DateTim
             } else {
                 NaiveDate::from_ymd_opt(date.year(), date.month() + 1, 1).unwrap()
             };
-            let end = next - Duration::days(1);
-            (
-                Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap()),
-                Utc.from_utc_datetime(&end.and_hms_opt(23, 59, 59).unwrap()),
-            )
+            (start, next - Duration::days(1))
         }
-        "year" => {
-            let start = NaiveDate::from_ymd_opt(date.year(), 1, 1).unwrap();
-            let end = NaiveDate::from_ymd_opt(date.year(), 12, 31).unwrap();
-            (
-                Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap()),
-                Utc.from_utc_datetime(&end.and_hms_opt(23, 59, 59).unwrap()),
-            )
-        }
-        _ => {
-            let start = date;
-            (
-                Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap()),
-                Utc.from_utc_datetime(&start.and_hms_opt(23, 59, 59).unwrap()),
-            )
-        }
-    }
+        "year" => (
+            NaiveDate::from_ymd_opt(date.year(), 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(date.year(), 12, 31).unwrap(),
+        ),
+        _ => (date, date),
+    };
+    (
+        local_bound(tz, start, false).unwrap_or_else(|| utc_bound(start, false)),
+        local_bound(tz, end, true).unwrap_or_else(|| utc_bound(end, true)),
+    )
 }
 
 fn is_weekly(rule: &Option<String>) -> bool {
@@ -85,7 +94,8 @@ fn add_amount(map: &mut BTreeMap<String, f64>, currency: &str, amount: f64) {
     *map.entry(currency.to_string()).or_insert(0.0) += amount;
 }
 
-fn timeline_key(period: &str, dt: DateTime<Utc>) -> String {
+fn timeline_key(period: &str, dt: DateTime<Utc>, tz: Tz) -> String {
+    let dt = dt.with_timezone(&tz);
     match period {
         "year" => format!("{:02}", dt.month()),
         "week" | "month" | "day" => format!("{:02}.{:02}", dt.day(), dt.month()),
@@ -93,7 +103,8 @@ fn timeline_key(period: &str, dt: DateTime<Utc>) -> String {
     }
 }
 
-fn timeline_label(period: &str, dt: DateTime<Utc>) -> String {
+fn timeline_label(period: &str, dt: DateTime<Utc>, tz: Tz) -> String {
+    let dt = dt.with_timezone(&tz);
     match period {
         "year" => format!("{}", dt.format("%b")),
         _ => format!("{}", dt.format("%d.%m")),
@@ -158,6 +169,7 @@ fn find_exception<'a>(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn classify_finance_amounts(
     status: &str,
     payment_status: &str,
@@ -277,6 +289,7 @@ fn fill_timeline_slots(
     period: &str,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
+    tz: Tz,
     currencies: &[String],
     timeline: &mut BTreeMap<(String, String), (String, f64, f64, f64)>,
 ) {
@@ -284,12 +297,19 @@ fn fill_timeline_slots(
         return;
     }
     if period == "month" || period == "week" {
-        let mut day = from.date_naive();
-        let end = to.date_naive();
+        let mut day = from.with_timezone(&tz).date_naive();
+        let end = to.with_timezone(&tz).date_naive();
         while day <= end {
-            let dt = Utc.from_utc_datetime(&day.and_hms_opt(12, 0, 0).unwrap());
-            let tk = timeline_key(period, dt);
-            let label = timeline_label(period, dt);
+            let noon = day.and_hms_opt(12, 0, 0).unwrap();
+            let dt = tz
+                .from_local_datetime(&noon)
+                .single()
+                .or_else(|| tz.from_local_datetime(&noon).earliest())
+                .or_else(|| tz.from_local_datetime(&noon).latest())
+                .map(|d| d.with_timezone(&Utc))
+                .unwrap_or_else(|| Utc.from_utc_datetime(&noon));
+            let tk = timeline_key(period, dt, tz);
+            let label = timeline_label(period, dt, tz);
             for currency in currencies {
                 timeline
                     .entry((tk.clone(), currency.clone()))
@@ -311,23 +331,44 @@ pub fn get_finance_report(
     let anchor_dt: DateTime<Utc> = anchor
         .parse::<DateTime<Utc>>()
         .map_err(|e: chrono::ParseError| e.to_string())?;
-    let (from, to) = if period == "custom" {
-        let f = custom_from
-            .as_ref()
-            .ok_or_else(|| "custom_from required".to_string())?
-            .parse::<DateTime<Utc>>()
-            .map_err(|e: chrono::ParseError| e.to_string())?;
-        let t = custom_to
-            .as_ref()
-            .ok_or_else(|| "custom_to required".to_string())?
-            .parse::<DateTime<Utc>>()
-            .map_err(|e: chrono::ParseError| e.to_string())?;
-        (f, t)
-    } else {
-        period_bounds(&period, anchor_dt)
-    };
+    let custom_from = custom_from
+        .map(|s| {
+            s.parse::<DateTime<Utc>>()
+                .map_err(|e: chrono::ParseError| e.to_string())
+        })
+        .transpose()?;
+    let custom_to = custom_to
+        .map(|s| {
+            s.parse::<DateTime<Utc>>()
+                .map_err(|e: chrono::ParseError| e.to_string())
+        })
+        .transpose()?;
 
     state.pool.with_conn(|conn| {
+        let tz_name = crate::commands::lessons::setting_timezone(conn);
+        let tz: Tz = tz_name.parse().unwrap_or(chrono_tz::Europe::Moscow);
+        finance_report(conn, &period, anchor_dt, custom_from, custom_to, tz)
+    })
+}
+
+pub(crate) fn finance_report(
+    conn: &Connection,
+    period: &str,
+    anchor_dt: DateTime<Utc>,
+    custom_from: Option<DateTime<Utc>>,
+    custom_to: Option<DateTime<Utc>>,
+    tz: Tz,
+) -> Result<FinanceReport, String> {
+    let (from, to) = if period == "custom" {
+        (
+            custom_from.ok_or_else(|| "custom_from required".to_string())?,
+            custom_to.ok_or_else(|| "custom_to required".to_string())?,
+        )
+    } else {
+        period_bounds(period, anchor_dt, tz)
+    };
+
+    {
         let mut stmt = conn
             .prepare(
                 "SELECT l.id, l.subject, l.start_at, l.status, l.recurrence_rule,
@@ -415,8 +456,8 @@ pub fn get_finance_report(
                 entry.subject.clone()
             };
 
-            let tk = timeline_key(&period, entry.start_at);
-            let tl = timeline_label(&period, entry.start_at);
+            let tk = timeline_key(period, entry.start_at, tz);
+            let tl = timeline_label(period, entry.start_at, tz);
             let bucket = timeline
                 .entry((tk, entry.currency.clone()))
                 .or_insert((tl, 0.0, 0.0, 0.0));
@@ -460,7 +501,7 @@ pub fn get_finance_report(
             .collect();
         currencies.sort();
         currencies.dedup();
-        fill_timeline_slots(&period, from, to, &currencies, &mut timeline);
+        fill_timeline_slots(period, from, to, tz, &currencies, &mut timeline);
 
         let to_vec = |m: BTreeMap<String, f64>| {
             m.into_iter()
@@ -491,7 +532,7 @@ pub fn get_finance_report(
             .collect();
 
         Ok(FinanceReport {
-            period: period.clone(),
+            period: period.to_string(),
             from: from.to_rfc3339(),
             to: to.to_rfc3339(),
             earned: to_vec(earned_map),
@@ -500,7 +541,7 @@ pub fn get_finance_report(
             by_subject,
             timeline,
         })
-    })
+    }
 }
 
 #[tauri::command]
@@ -509,7 +550,17 @@ pub fn mark_debt_paid(
     lesson_id: String,
     student_id: String,
 ) -> Result<(), String> {
-    state.pool.with_conn(|conn| {
+    state
+        .pool
+        .with_conn(|conn| mark_debt_paid_conn(conn, &lesson_id, &student_id))
+}
+
+pub(crate) fn mark_debt_paid_conn(
+    conn: &Connection,
+    lesson_id: &str,
+    student_id: &str,
+) -> Result<(), String> {
+    {
         conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
             let updated = conn
@@ -547,14 +598,18 @@ pub fn mark_debt_paid(
                 Err(error)
             }
         }
-    })
+    }
 }
 
 #[tauri::command]
 pub fn get_debt_lessons(
     state: tauri::State<AppState>,
-) -> Result<Vec<crate::models::DebtEntry>, String> {
-    state.pool.with_conn(|conn| {
+) -> Result<Vec<DebtEntry>, String> {
+    state.pool.with_conn(debt_lessons)
+}
+
+pub(crate) fn debt_lessons(conn: &Connection) -> Result<Vec<DebtEntry>, String> {
+    {
         let mut stmt = conn
             .prepare(
                 "SELECT l.id, s.id, s.name, l.subject, l.start_at, l.status,
@@ -572,7 +627,7 @@ pub fn get_debt_lessons(
 
         let rows = stmt
             .query_map([], |row| {
-                Ok(crate::models::DebtEntry {
+                Ok(DebtEntry {
                     lesson_id: row.get(0)?,
                     student_id: row.get(1)?,
                     student_name: row.get(2)?,
@@ -590,5 +645,374 @@ pub fn get_debt_lessons(
             out.push(row.map_err(|e| e.to_string())?);
         }
         Ok(out)
-    })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        conn
+    }
+
+    fn insert_student(conn: &Connection, id: &str, name: &str) {
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO students (id, name, notes, archived, created_at, updated_at)
+             VALUES (?1, ?2, '', 0, ?3, ?3)",
+            params![id, name, now],
+        )
+        .unwrap();
+    }
+
+    fn insert_lesson(
+        conn: &Connection,
+        id: &str,
+        start_at_rfc3339: &str,
+        status: &str,
+        payment_status: &str,
+        cost: Option<f64>,
+        currency: &str,
+        students: &[(&str, Option<f64>, &str, &str)],
+    ) {
+        let now = Utc::now().to_rfc3339();
+        let student_name = students
+            .first()
+            .map(|(sid, _, _, _)| {
+                conn.query_row(
+                    "SELECT name FROM students WHERE id = ?1",
+                    params![sid],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        conn.execute(
+            "INSERT INTO lessons (id, student_name, subject, start_at, duration_minutes, cost, currency, link, notes, materials, status, payment_status, created_at, updated_at)
+             VALUES (?1, ?2, 'Math', ?3, 60, ?4, ?5, NULL, '', '', ?6, ?7, ?8, ?8)",
+            params![id, student_name, start_at_rfc3339, cost, currency, status, payment_status, now],
+        )
+        .unwrap();
+        for (sid, scost, scurrency, spayment) in students {
+            conn.execute(
+                "INSERT INTO lesson_students (lesson_id, student_id, cost, currency, payment_status)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, sid, scost, scurrency, spayment],
+            )
+            .unwrap();
+        }
+    }
+
+    fn amount(report: &FinanceReport, currency: &str) -> Option<f64> {
+        report
+            .earned
+            .iter()
+            .find(|e| e.currency == currency)
+            .map(|e| e.amount)
+    }
+
+    #[test]
+    fn debt_includes_completed_unpaid() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "completed",
+            "unpaid",
+            Some(20.0),
+            "USD",
+            &[("s1", None, "", "unpaid")],
+        );
+        let debts = debt_lessons(&conn).unwrap();
+        assert_eq!(debts.len(), 1);
+        assert!((debts[0].cost - 20.0).abs() < 1e-9);
+        assert_eq!(debts[0].currency, "USD");
+    }
+
+    #[test]
+    fn debt_includes_no_show_unpaid() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "no_show",
+            "unpaid",
+            Some(20.0),
+            "USD",
+            &[("s1", None, "", "unpaid")],
+        );
+        assert_eq!(debt_lessons(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn debt_excludes_cancelled() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "cancelled",
+            "unpaid",
+            Some(20.0),
+            "USD",
+            &[("s1", None, "", "unpaid")],
+        );
+        assert!(debt_lessons(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn debt_excludes_zero_or_null_cost() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "completed",
+            "unpaid",
+            None,
+            "USD",
+            &[("s1", None, "", "unpaid")],
+        );
+        insert_lesson(
+            &conn,
+            "l2",
+            "2026-03-11T10:00:00Z",
+            "completed",
+            "unpaid",
+            Some(0.0),
+            "USD",
+            &[("s1", Some(0.0), "USD", "unpaid")],
+        );
+        assert!(debt_lessons(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn debt_excludes_paid() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "completed",
+            "paid",
+            Some(20.0),
+            "USD",
+            &[("s1", None, "", "paid")],
+        );
+        assert!(debt_lessons(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn mark_debt_paid_single_student() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "completed",
+            "unpaid",
+            Some(20.0),
+            "USD",
+            &[("s1", None, "", "unpaid")],
+        );
+        mark_debt_paid_conn(&conn, "l1", "s1").unwrap();
+        assert!(debt_lessons(&conn).unwrap().is_empty());
+        let lesson_status: String = conn
+            .query_row(
+                "SELECT payment_status FROM lessons WHERE id = 'l1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(lesson_status, "paid");
+        let student_status: String = conn
+            .query_row(
+                "SELECT payment_status FROM lesson_students WHERE lesson_id = 'l1' AND student_id = 's1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(student_status, "paid");
+    }
+
+    #[test]
+    fn mark_debt_paid_group_lesson_partial() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_student(&conn, "s2", "Maria");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "completed",
+            "unpaid",
+            Some(20.0),
+            "USD",
+            &[
+                ("s1", None, "", "unpaid"),
+                ("s2", None, "", "unpaid"),
+            ],
+        );
+        mark_debt_paid_conn(&conn, "l1", "s1").unwrap();
+        let debts = debt_lessons(&conn).unwrap();
+        assert_eq!(debts.len(), 1);
+        assert_eq!(debts[0].student_id, "s2");
+        let lesson_status: String = conn
+            .query_row(
+                "SELECT payment_status FROM lessons WHERE id = 'l1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(lesson_status, "unpaid");
+        mark_debt_paid_conn(&conn, "l1", "s2").unwrap();
+        assert!(debt_lessons(&conn).unwrap().is_empty());
+        let lesson_status: String = conn
+            .query_row(
+                "SELECT payment_status FROM lessons WHERE id = 'l1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(lesson_status, "paid");
+    }
+
+    #[test]
+    fn mark_debt_paid_unknown_returns_err() {
+        let conn = test_conn();
+        assert!(mark_debt_paid_conn(&conn, "nope", "nope").is_err());
+    }
+
+    #[test]
+    fn finance_month_uses_local_timezone() {
+        let conn = test_conn();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('timezone', 'Europe/Minsk')",
+            [],
+        )
+        .unwrap();
+        insert_student(&conn, "s1", "Ivan");
+        // 2026-03-01T01:00:00+03:00 local Minsk = 2026-02-28T22:00:00Z
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-02-28T22:00:00Z",
+            "completed",
+            "paid",
+            Some(30.0),
+            "USD",
+            &[("s1", None, "", "paid")],
+        );
+        let tz: Tz = "Europe/Minsk".parse().unwrap();
+        let march = finance_report(
+            &conn,
+            "month",
+            "2026-03-15T12:00:00Z".parse().unwrap(),
+            None,
+            None,
+            tz,
+        )
+        .unwrap();
+        assert!((amount(&march, "USD").unwrap_or(0.0) - 30.0).abs() < 1e-9);
+        let feb = finance_report(
+            &conn,
+            "month",
+            "2026-02-15T12:00:00Z".parse().unwrap(),
+            None,
+            None,
+            tz,
+        )
+        .unwrap();
+        assert!(amount(&feb, "USD").unwrap_or(0.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn finance_groups_by_currency_without_conversion() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "completed",
+            "paid",
+            Some(50.0),
+            "USD",
+            &[("s1", None, "", "paid")],
+        );
+        insert_lesson(
+            &conn,
+            "l2",
+            "2026-03-12T10:00:00Z",
+            "completed",
+            "paid",
+            Some(100.0),
+            "BYN",
+            &[("s1", None, "", "paid")],
+        );
+        let tz: Tz = "Europe/Minsk".parse().unwrap();
+        let report = finance_report(
+            &conn,
+            "month",
+            "2026-03-15T12:00:00Z".parse().unwrap(),
+            None,
+            None,
+            tz,
+        )
+        .unwrap();
+        assert_eq!(report.earned.len(), 2);
+        assert!((amount(&report, "USD").unwrap_or(0.0) - 50.0).abs() < 1e-9);
+        assert!((amount(&report, "BYN").unwrap_or(0.0) - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn finance_excludes_cancelled_and_zero_cost() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "cancelled",
+            "paid",
+            Some(40.0),
+            "USD",
+            &[("s1", None, "", "paid")],
+        );
+        insert_lesson(
+            &conn,
+            "l2",
+            "2026-03-11T10:00:00Z",
+            "completed",
+            "unpaid",
+            None,
+            "USD",
+            &[("s1", None, "", "unpaid")],
+        );
+        let tz: Tz = "Europe/Minsk".parse().unwrap();
+        let report = finance_report(
+            &conn,
+            "month",
+            "2026-03-15T12:00:00Z".parse().unwrap(),
+            None,
+            None,
+            tz,
+        )
+        .unwrap();
+        assert!(report.earned.is_empty());
+        assert!(report.debt.is_empty());
+        assert!(report.expected.is_empty());
+    }
 }

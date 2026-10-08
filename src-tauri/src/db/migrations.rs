@@ -42,6 +42,14 @@ pub fn run(conn: &Connection) -> Result<(), String> {
             FOREIGN KEY (lesson_id) REFERENCES lessons(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS reminder_snoozes (
+            lesson_id TEXT NOT NULL,
+            instance_start TEXT NOT NULL,
+            minutes_before INTEGER NOT NULL,
+            snooze_until TEXT NOT NULL,
+            PRIMARY KEY (lesson_id, instance_start, minutes_before)
+        );
+
         CREATE TABLE IF NOT EXISTS fired_reminders (
             lesson_id TEXT NOT NULL,
             instance_start TEXT NOT NULL,
@@ -121,6 +129,8 @@ pub fn run(conn: &Connection) -> Result<(), String> {
         [],
     );
 
+    migrate_reminder_snoozes(conn)?;
+
     migrate_v3_students(conn)?;
     migrate_v4_parent_fields(conn)?;
     ensure_indexes(conn)?;
@@ -168,12 +178,49 @@ fn ensure_indexes(conn: &Connection) -> Result<(), String> {
         CREATE INDEX IF NOT EXISTS idx_lessons_recurrence_parent ON lessons(recurrence_parent_id);
         CREATE INDEX IF NOT EXISTS idx_lesson_students_student ON lesson_students(student_id);
         CREATE INDEX IF NOT EXISTS idx_reminders_lesson ON reminders(lesson_id);
+        CREATE INDEX IF NOT EXISTS idx_lesson_students_lesson_payment ON lesson_students(lesson_id, payment_status);
+        CREATE INDEX IF NOT EXISTS idx_lessons_status ON lessons(status);
+        CREATE INDEX IF NOT EXISTS idx_lessons_payment_status ON lessons(payment_status);
         ",
     )
     .map_err(|e| e.to_string())?;
     Ok(())
 }
 
+fn migrate_reminder_snoozes(conn: &Connection) -> Result<(), String> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'reminder_snooze'",
+            [],
+            |r| r.get(0),
+        )
+        .ok();
+
+    if let Some(raw) = raw {
+        let map: std::collections::HashMap<String, String> =
+            serde_json::from_str(&raw).unwrap_or_default();
+        for (key, snooze_until) in map {
+            let parts: Vec<&str> = key.split('|').collect();
+            if parts.len() != 3 {
+                continue;
+            }
+            let Ok(minutes_before) = parts[2].parse::<i64>() else {
+                continue;
+            };
+            conn.execute(
+                "INSERT OR IGNORE INTO reminder_snoozes (lesson_id, instance_start, minutes_before, snooze_until)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![parts[0], parts[1], minutes_before, snooze_until],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        conn.execute("DELETE FROM settings WHERE key = 'reminder_snooze'", [])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::type_complexity)]
 fn migrate_v3_students(conn: &Connection) -> Result<(), String> {
     let migrated: String = conn
         .query_row(
@@ -265,17 +312,15 @@ fn migrate_v3_students(conn: &Connection) -> Result<(), String> {
             )
             .map_err(|e| e.to_string())?;
 
-            if let Ok(color) = conn.query_row(
+            if let Ok(Some(c)) = conn.query_row(
                 "SELECT color FROM students WHERE id = ?1",
                 params![student_id],
                 |r| r.get::<_, Option<String>>(0),
             ) {
-                if let Some(c) = color {
-                    let _ = conn.execute(
-                        "UPDATE lessons SET color = ?2 WHERE id = ?1 AND (color IS NULL OR color = '')",
-                        params![lesson_id, c],
-                    );
-                }
+                let _ = conn.execute(
+                    "UPDATE lessons SET color = ?2 WHERE id = ?1 AND (color IS NULL OR color = '')",
+                    params![lesson_id, c],
+                );
             }
         }
     }

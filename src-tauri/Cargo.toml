@@ -2,7 +2,7 @@
 name = "tutor-app"
 version = "0.2.0"
 description = "Tutor scheduling desktop app"
-authors = ["you"]
+authors = ["TutorApp"]
 edition = "2021"
 
 [lib]

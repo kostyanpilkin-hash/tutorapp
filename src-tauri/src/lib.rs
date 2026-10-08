@@ -75,10 +75,13 @@ pub fn run() {
             let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let mut tray_builder = TrayIconBuilder::new()
                 .menu(&menu)
-                .tooltip("TutorApp")
+                .tooltip("TutorApp");
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+            let _tray = tray_builder
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => {
                         if let Some(w) = app.get_webview_window("main") {
@@ -115,7 +118,7 @@ pub fn run() {
                 eprintln!("Toast identity setup: {e}");
             }
             #[cfg(windows)]
-            if let Err(e) = commands::shortcut::ensure_desktop_shortcut(app.handle()) {
+            if let Err(e) = commands::shortcut::refresh_desktop_shortcut_if_exists(app.handle()) {
                 eprintln!("Desktop shortcut setup: {e}");
             }
             // Ask once so Windows allows branded toasts.

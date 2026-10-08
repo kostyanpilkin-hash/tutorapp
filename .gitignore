@@ -26,3 +26,4 @@ installers
 *.njsproj
 *.sln
 *.sw?
+.tmp-review

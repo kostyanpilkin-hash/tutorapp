@@ -91,6 +91,22 @@ pub fn ensure_desktop_shortcut(_app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+pub fn refresh_desktop_shortcut_if_exists(app: &AppHandle) -> Result<(), String> {
+    let Some(desktop) = dirs::desktop_dir() else {
+        return Ok(());
+    };
+    if desktop.join("TutorApp.lnk").exists() {
+        ensure_desktop_shortcut(app)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn refresh_desktop_shortcut_if_exists(_app: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
 #[tauri::command]
 pub fn create_desktop_shortcut(app: AppHandle) -> Result<(), String> {
     ensure_desktop_shortcut(&app)

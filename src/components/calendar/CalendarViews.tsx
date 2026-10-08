@@ -66,7 +66,7 @@ async function moveLesson(
   }
 
   const previousStart = lesson.startAt;
-  const input = { ...lessonToInput(lesson), startAt: newStart.toISOString() };
+  const input = { ...lessonToInput(lesson), startAt: newStart.toISOString(), force: true };
   let createdExceptionId: string | null = null;
   let updatedId: string | null = null;
 

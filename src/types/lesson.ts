@@ -82,6 +82,7 @@ export interface LessonInput {
   color?: string | null;
   students: LessonStudentInput[];
   reminders: number[];
+  force?: boolean;
 }
 
 export function lessonToInput(lesson: Lesson): LessonInput {

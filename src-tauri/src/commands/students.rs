@@ -274,14 +274,12 @@ pub fn remove_student_photo(
     student_id: String,
 ) -> Result<Student, String> {
     state.pool.with_conn(|conn| {
-        if let Ok(path) = conn.query_row(
+        if let Ok(Some(p)) = conn.query_row(
             "SELECT photo_path FROM students WHERE id = ?1",
             params![student_id],
             |r| r.get::<_, Option<String>>(0),
         ) {
-            if let Some(p) = path {
-                let _ = fs::remove_file(p);
-            }
+            let _ = fs::remove_file(p);
         }
         let now = Utc::now().to_rfc3339();
         conn.execute(
@@ -433,7 +431,7 @@ pub fn get_student_finance(
                     && (lesson.payment == "paid"
                         || lesson.status == "completed"
                         || lesson.status == "no_show"
-                        || (lesson.status == "scheduled" && lesson.payment != "paid"))
+                        || lesson.status == "scheduled")
                 {
                     classify(
                         &lesson.status,

@@ -341,6 +341,9 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       );
       return;
     }
+    if (overlaps.length > 0 || overlapWarning) {
+      input.force = true;
+    }
 
     if (lesson && !scope && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
       setScopeOpen(true);

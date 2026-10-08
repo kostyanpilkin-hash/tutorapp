@@ -1,8 +1,9 @@
 pub mod migrations;
 pub mod pool;
 
+use chrono::{Duration, Utc};
 use pool::DbPool;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -39,6 +40,14 @@ pub fn init_db() -> Result<AppState, String> {
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
         .map_err(|e| e.to_string())?;
     migrations::run(&conn)?;
+    if let Err(e) = crate::commands::lessons::dedupe_all_exception_slots(&conn) {
+        eprintln!("Exception dedupe on startup: {e}");
+    }
+    conn.execute(
+        "DELETE FROM reminder_snoozes WHERE snooze_until < ?1",
+        params![(Utc::now() - Duration::days(1)).to_rfc3339()],
+    )
+    .map_err(|e| e.to_string())?;
 
     let pool = DbPool {
         conn: Mutex::new(conn),

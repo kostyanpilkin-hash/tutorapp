@@ -67,6 +67,7 @@ pub fn start_scheduler(app: AppHandle, running: Arc<AtomicBool>) {
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn fire_reminder(
     app: &AppHandle,
     conn: &rusqlite::Connection,
@@ -137,9 +138,6 @@ fn check_reminders(app: &AppHandle, state: &AppState) -> Result<(), String> {
     let lookback = now - Duration::hours(1);
 
     state.pool.with_conn(|conn| {
-        // Drop duplicate exception rows so parent+exception don't both notify.
-        crate::commands::lessons::dedupe_all_exception_slots(conn)?;
-
         let mut stmt = conn
             .prepare(
                 "SELECT l.id, l.student_name, l.subject, l.start_at, l.link, l.recurrence_rule, r.minutes_before

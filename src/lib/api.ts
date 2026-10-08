@@ -26,11 +26,16 @@ function errMessage(e: unknown): string {
   return "Неизвестная ошибка";
 }
 
+export function overlapNamesFromError(e: unknown): string | null {
+  const msg = errMessage(e);
+  return msg.startsWith("OVERLAP:") ? msg.slice("OVERLAP:".length) : null;
+}
+
 async function call<T>(fn: () => Promise<T>, opts?: { silent?: boolean }): Promise<T> {
   try {
     return await fn();
   } catch (e) {
-    if (!opts?.silent) {
+    if (!opts?.silent && overlapNamesFromError(e) === null) {
       useToastStore.getState().error(errMessage(e));
     }
     throw e;

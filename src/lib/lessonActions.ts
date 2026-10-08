@@ -1,7 +1,7 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "@/lib/api";
 import { parentLessonId } from "@/lib/recurrence";
-import type { Lesson, LessonStatus, PaymentStatus } from "@/types/lesson";
+import type { Lesson, LessonInput, LessonStatus, PaymentStatus } from "@/types/lesson";
 import { lessonToInput } from "@/types/lesson";
 
 export function lessonPaymentStatus(lesson: Lesson): PaymentStatus {
@@ -20,86 +20,56 @@ export function isLessonUpcoming(lesson: Lesson, now = new Date()): boolean {
   return new Date(lesson.startAt).getTime() > now.getTime() && lesson.status === "scheduled";
 }
 
+export async function persistLessonChange(
+  lesson: Lesson,
+  patch: Partial<LessonInput>,
+): Promise<Lesson> {
+  const base = lessonToInput(lesson);
+  if (lesson.id.includes("::")) {
+    return api.createLesson({
+      ...base,
+      ...patch,
+      recurrenceRule: null,
+      recurrenceParentId: parentLessonId(lesson),
+      recurrenceInstanceDate: lesson.recurrenceInstanceDate || lesson.startAt,
+    });
+  }
+  return api.updateLesson(lesson.id, { ...base, ...patch });
+}
+
 export async function setLessonStatus(
   lesson: Lesson,
   status: LessonStatus,
   paymentStatus?: PaymentStatus,
 ): Promise<void> {
   const pay = paymentStatus ?? lesson.paymentStatus;
-  if (lesson.id.includes("::")) {
-    await api.createLesson({
-      ...lessonToInput(lesson),
-      status,
-      paymentStatus: pay,
-      recurrenceRule: null,
-      recurrenceParentId: parentLessonId(lesson),
-      recurrenceInstanceDate: lesson.recurrenceInstanceDate || lesson.startAt,
-      students: lesson.students.map((s) => ({
-        studentId: s.studentId,
-        cost: s.cost,
-        currency: s.currency,
-        paymentStatus: pay,
-      })),
-    });
-    return;
-  }
-  await api.updateLessonStatus(lesson.id, status, pay);
+  await persistLessonChange(lesson, {
+    status,
+    paymentStatus: pay,
+    students: lesson.students.map((s) => ({
+      studentId: s.studentId,
+      cost: s.cost,
+      currency: s.currency,
+      paymentStatus: paymentStatus ? pay : s.paymentStatus,
+    })),
+  });
 }
 
 export async function setLessonPaid(lesson: Lesson, paid: boolean): Promise<void> {
   const paymentStatus: PaymentStatus = paid ? "paid" : "unpaid";
-  if (lesson.id.includes("::")) {
-    await api.createLesson({
-      ...lessonToInput(lesson),
+  await persistLessonChange(lesson, {
+    paymentStatus,
+    students: lesson.students.map((s) => ({
+      studentId: s.studentId,
+      cost: s.cost,
+      currency: s.currency,
       paymentStatus,
-      recurrenceRule: null,
-      recurrenceParentId: parentLessonId(lesson),
-      recurrenceInstanceDate: lesson.recurrenceInstanceDate || lesson.startAt,
-      students: lesson.students.map((s) => ({
-        studentId: s.studentId,
-        cost: s.cost,
-        currency: s.currency,
-        paymentStatus,
-      })),
-    });
-    return;
-  }
-
-  if (lesson.students.length > 0) {
-    await api.updateLesson(lesson.id, {
-      ...lessonToInput(lesson),
-      paymentStatus,
-      students: lesson.students.map((s) => ({
-        studentId: s.studentId,
-        cost: s.cost,
-        currency: s.currency,
-        paymentStatus,
-      })),
-    });
-    return;
-  }
-
-  await api.updateLessonStatus(lesson.id, lesson.status, paymentStatus);
+    })),
+  });
 }
 
 export async function rescheduleLesson(lesson: Lesson, newStart: Date): Promise<void> {
-  const input = { ...lessonToInput(lesson), startAt: newStart.toISOString() };
-
-  if (lesson.id.includes("::") || (lesson.recurrenceParentId && !lesson.id.includes("::"))) {
-    if (lesson.recurrenceParentId && !lesson.id.includes("::")) {
-      await api.updateLesson(lesson.id, input);
-      return;
-    }
-    await api.createLesson({
-      ...input,
-      recurrenceRule: null,
-      recurrenceParentId: parentLessonId(lesson),
-      recurrenceInstanceDate: lesson.recurrenceInstanceDate || lesson.startAt,
-    });
-    return;
-  }
-
-  await api.updateLesson(lesson.id, input);
+  await persistLessonChange(lesson, { startAt: newStart.toISOString() });
 }
 
 export async function openLessonLink(lesson: Lesson): Promise<void> {

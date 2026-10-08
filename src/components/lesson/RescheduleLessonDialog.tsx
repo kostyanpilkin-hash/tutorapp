@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { format } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { create } from "zustand";
-import { api } from "@/lib/api";
+import { api, overlapNamesFromError } from "@/lib/api";
 import { rescheduleLesson } from "@/lib/lessonActions";
 import type { Lesson } from "@/types/lesson";
 import { Button } from "@/components/ui/button";
@@ -96,6 +96,14 @@ export function RescheduleLessonDialog() {
       onChanged?.();
       useToastStore.getState().success(t("lesson.movedToast"));
       close();
+    } catch (e) {
+      if (overlapNamesFromError(e) !== null) {
+        setSelected(null);
+        setSlots((current) => current.filter((slot) => slot.getTime() !== selected.getTime()));
+        useToastStore.getState().error(t("lesson.rescheduleSlotUnavailable"));
+      } else {
+        throw e;
+      }
     } finally {
       setSaving(false);
     }

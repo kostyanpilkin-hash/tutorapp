@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -20,7 +20,9 @@ import {
   MonthView,
   AgendaView,
 } from "@/components/calendar/CalendarViews";
-import { FinancePanel } from "@/components/finance/FinancePanel";
+const FinancePanel = lazy(() =>
+  import("@/components/finance/FinancePanel").then((m) => ({ default: m.FinancePanel })),
+);
 import { RemindersPanel } from "@/components/reminders/RemindersPanel";
 import { StudentsPanel } from "@/components/students/StudentsPanel";
 import { ToastHost } from "@/components/ui/ToastHost";
@@ -291,7 +293,17 @@ export default function App() {
 
           {page === "reminders" && <RemindersPanel />}
 
-          {page === "finance" && <FinancePanel />}
+          {page === "finance" && (
+            <Suspense
+              fallback={
+                <div className="animate-pulse text-sm text-muted-foreground">
+                  {t("finance.loading")}
+                </div>
+              }
+            >
+              <FinancePanel />
+            </Suspense>
+          )}
 
           {page === "students" && (
             <StudentsPanel

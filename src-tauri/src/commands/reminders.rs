@@ -1,7 +1,6 @@
 use crate::db::AppState;
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::params;
-use std::collections::HashMap;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,45 +14,21 @@ pub struct FiredReminderEntry {
     link: Option<String>,
 }
 
-fn reminder_key(lesson_id: &str, instance_start: &str, minutes_before: i64) -> String {
-    format!("{lesson_id}|{instance_start}|{minutes_before}")
-}
-
-fn load_snooze_map(conn: &rusqlite::Connection) -> Result<HashMap<String, String>, String> {
-    let raw: String = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = 'reminder_snooze'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or_else(|_| "{}".to_string());
-    Ok(serde_json::from_str(&raw).unwrap_or_default())
-}
-
-fn save_snooze_map(
-    conn: &rusqlite::Connection,
-    map: &HashMap<String, String>,
-) -> Result<(), String> {
-    let value = serde_json::to_string(map).map_err(|e| e.to_string())?;
-    conn.execute(
-        "INSERT INTO settings (key, value) VALUES ('reminder_snooze', ?1)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        params![value],
-    )
-    .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 pub(crate) fn reminder_snooze_until(
     conn: &rusqlite::Connection,
     lesson_id: &str,
     instance_start: &str,
     minutes_before: i64,
 ) -> Result<Option<DateTime<Utc>>, String> {
-    let map = load_snooze_map(conn)?;
-    Ok(map
-        .get(&reminder_key(lesson_id, instance_start, minutes_before))
-        .and_then(|value| value.parse::<DateTime<Utc>>().ok()))
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT snooze_until FROM reminder_snoozes
+             WHERE lesson_id = ?1 AND instance_start = ?2 AND minutes_before = ?3",
+            params![lesson_id, instance_start, minutes_before],
+            |row| row.get(0),
+        )
+        .ok();
+    Ok(raw.and_then(|value| value.parse::<DateTime<Utc>>().ok()))
 }
 
 pub(crate) fn clear_reminder_snooze(
@@ -62,9 +37,13 @@ pub(crate) fn clear_reminder_snooze(
     instance_start: &str,
     minutes_before: i64,
 ) -> Result<(), String> {
-    let mut map = load_snooze_map(conn)?;
-    map.remove(&reminder_key(lesson_id, instance_start, minutes_before));
-    save_snooze_map(conn, &map)
+    conn.execute(
+        "DELETE FROM reminder_snoozes
+         WHERE lesson_id = ?1 AND instance_start = ?2 AND minutes_before = ?3",
+        params![lesson_id, instance_start, minutes_before],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -115,13 +94,15 @@ pub fn snooze_reminder(
     }
 
     state.pool.with_conn(|conn| {
-        let mut map = load_snooze_map(conn)?;
         let snooze_until = (Utc::now() + Duration::minutes(snooze_minutes)).to_rfc3339();
-        map.insert(
-            reminder_key(&lesson_id, &instance_start, minutes_before),
-            snooze_until,
-        );
-        save_snooze_map(conn, &map)?;
+        conn.execute(
+            "INSERT INTO reminder_snoozes (lesson_id, instance_start, minutes_before, snooze_until)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(lesson_id, instance_start, minutes_before)
+             DO UPDATE SET snooze_until = excluded.snooze_until",
+            params![lesson_id, instance_start, minutes_before, snooze_until],
+        )
+        .map_err(|e| e.to_string())?;
         conn.execute(
             "DELETE FROM fired_reminders
              WHERE lesson_id = ?1 AND instance_start = ?2 AND minutes_before = ?3",

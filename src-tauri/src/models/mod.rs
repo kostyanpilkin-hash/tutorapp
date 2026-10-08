@@ -85,6 +85,8 @@ pub struct LessonInput {
     #[validate(length(min = 1, message = "Выберите хотя бы одного ученика"))]
     pub students: Vec<LessonStudentInput>,
     pub reminders: Vec<i64>,
+    #[serde(default)]
+    pub force: bool,
 }
 
 fn validate_lesson_status(s: &str) -> Result<(), validator::ValidationError> {
