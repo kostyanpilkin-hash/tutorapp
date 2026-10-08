@@ -232,6 +232,139 @@
   --destructive: #dc2626;
 }
 
+/* Лаванда — мягкий фиолетовый */
+.theme-lavender {
+  --bg: #f7f5fc;
+  --fg: #2a2140;
+  --card: #ffffff;
+  --card-fg: #2a2140;
+  --primary: #6d4fc2;
+  --primary-fg: #ffffff;
+  --secondary: #ece7fa;
+  --secondary-fg: #3f2d7a;
+  --muted: #efebf9;
+  --muted-fg: #6b5f8f;
+  --accent: #ddd3fb;
+  --accent-fg: #3f2d7a;
+  --border: #d8cff1;
+  --ring: #6d4fc2;
+  --destructive: #b91c1c;
+}
+
+/* Персик — тёплый светлый */
+.theme-peach {
+  --bg: #fff6f1;
+  --fg: #3d2419;
+  --card: #ffffff;
+  --card-fg: #3d2419;
+  --primary: #d9633b;
+  --primary-fg: #ffffff;
+  --secondary: #ffe6da;
+  --secondary-fg: #7c3a22;
+  --muted: #fdebe2;
+  --muted-fg: #8a5a46;
+  --accent: #fed2bd;
+  --accent-fg: #7c3a22;
+  --border: #f3cdbb;
+  --ring: #d9633b;
+  --destructive: #b91c1c;
+}
+
+/* Графит — нейтральный тёмно-серый */
+.theme-graphite {
+  --bg: #16181a;
+  --fg: #ececec;
+  --card: #1f2225;
+  --card-fg: #ececec;
+  --primary: #c9ced6;
+  --primary-fg: #111315;
+  --secondary: #2a2e33;
+  --secondary-fg: #ececec;
+  --muted: #2a2e33;
+  --muted-fg: #a0a7b1;
+  --accent: #3a4047;
+  --accent-fg: #e5e8ec;
+  --border: #30353b;
+  --ring: #c9ced6;
+  --destructive: #f87171;
+}
+
+/* Полночь — тёмный сине-фиолетовый */
+.theme-midnight {
+  --bg: #0b1020;
+  --fg: #e6e9f5;
+  --card: #141a33;
+  --card-fg: #e6e9f5;
+  --primary: #7aa2ff;
+  --primary-fg: #0b1020;
+  --secondary: #1d2447;
+  --secondary-fg: #e6e9f5;
+  --muted: #1d2447;
+  --muted-fg: #9fb0e8;
+  --accent: #2a3a7a;
+  --accent-fg: #dbe4ff;
+  --border: #27305a;
+  --ring: #7aa2ff;
+  --destructive: #fb7185;
+}
+
+/* Уголь и янтарь — тёмный с тёплым акцентом */
+.theme-ember {
+  --bg: #1a1614;
+  --fg: #f3ede6;
+  --card: #251f1b;
+  --card-fg: #f3ede6;
+  --primary: #f59e0b;
+  --primary-fg: #1a1206;
+  --secondary: #332a24;
+  --secondary-fg: #f3ede6;
+  --muted: #332a24;
+  --muted-fg: #c9b9a6;
+  --accent: #4a3620;
+  --accent-fg: #fde8c3;
+  --border: #3d322b;
+  --ring: #f59e0b;
+  --destructive: #f87171;
+}
+
+/* Хвоя — тёмный зелёный */
+.theme-pine {
+  --bg: #0f1a15;
+  --fg: #e3f0e8;
+  --card: #16241d;
+  --card-fg: #e3f0e8;
+  --primary: #4ade80;
+  --primary-fg: #06120b;
+  --secondary: #1f3328;
+  --secondary-fg: #e3f0e8;
+  --muted: #1f3328;
+  --muted-fg: #a3c4b1;
+  --accent: #1e4d35;
+  --accent-fg: #c8f5d9;
+  --border: #27443a;
+  --ring: #4ade80;
+  --destructive: #fb7185;
+}
+
+/* Слива — тёмный бордовый */
+.theme-plum {
+  --bg: #1a1016;
+  --fg: #f4e8ef;
+  --card: #261821;
+  --card-fg: #f4e8ef;
+  --primary: #e879a6;
+  --primary-fg: #22080f;
+  --secondary: #352230;
+  --secondary-fg: #f4e8ef;
+  --muted: #352230;
+  --muted-fg: #cfaabd;
+  --accent: #5a2a45;
+  --accent-fg: #fbd5e6;
+  --border: #40293a;
+  --ring: #e879a6;
+  --destructive: #fb7185;
+}
+
 * {
   box-sizing: border-box;
 }

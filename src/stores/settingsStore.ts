@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { CalendarView, Theme } from "@/types/lesson";
 import { api } from "@/lib/api";
+import { isTheme } from "@/lib/themes";
 
 interface SettingsState {
   language: string;
@@ -16,6 +17,7 @@ interface SettingsState {
   load: () => Promise<void>;
   setLanguage: (lang: string) => Promise<void>;
   setTheme: (theme: Theme) => Promise<void>;
+  previewTheme: (theme: Theme) => void;
   setTimezone: (tz: string) => Promise<void>;
   setDefaultCalendarView: (view: CalendarView) => Promise<void>;
   setDefaultDuration: (minutes: number) => Promise<void>;
@@ -26,23 +28,9 @@ interface SettingsState {
 }
 
 const VALID_VIEWS: CalendarView[] = ["day", "week", "month", "agenda"];
-const VALID_THEMES: Theme[] = [
-  "light",
-  "dark",
-  "colorful",
-  "mint",
-  "ink",
-  "indigo",
-  "contrast",
-  "forest",
-  "sand",
-  "rose",
-  "ocean",
-];
-
 function parseTheme(value: string | undefined): Theme {
-  if (value && VALID_THEMES.includes(value as Theme)) {
-    return value as Theme;
+  if (isTheme(value)) {
+    return value;
   }
   return "light";
 }
@@ -100,6 +88,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
   setTheme: async (theme) => {
     await api.setSetting("theme", theme);
+    document.documentElement.className = `theme-${theme}`;
+    set({ theme });
+  },
+
+  previewTheme: (theme) => {
     document.documentElement.className = `theme-${theme}`;
     set({ theme });
   },

@@ -23,8 +23,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { Theme, CalendarView } from "@/types/lesson";
+import type { CalendarView } from "@/types/lesson";
 import { COMMON_TIMEZONES, getTimezoneOffset } from "@/lib/contacts";
+import { ThemePreview } from "@/components/settings/ThemePreview";
+import { ThemePickerDialog } from "@/components/settings/ThemePickerDialog";
 import i18n from "@/i18n";
 
 const REMINDER_OPTIONS = [
@@ -46,7 +48,6 @@ export function SettingsPanel() {
     defaultReminders,
     defaultCalendarView,
     setLanguage,
-    setTheme,
     setTimezone,
     setDefaultCalendarView,
     setDefaultDuration,
@@ -66,6 +67,7 @@ export function SettingsPanel() {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [busy, setBusy] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
 
   useEffect(() => {
     void isEnabled().then(setAutostart);
@@ -192,22 +194,19 @@ export function SettingsPanel() {
         </div>
         <div>
           <Label>{t("settings.theme")}</Label>
-          <Select value={theme} onValueChange={(v) => void setTheme(v as Theme)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="light">{t("settings.themes.light")}</SelectItem>
-              <SelectItem value="mint">{t("settings.themes.mint")}</SelectItem>
-              <SelectItem value="ink">{t("settings.themes.ink")}</SelectItem>
-              <SelectItem value="forest">{t("settings.themes.forest")}</SelectItem>
-              <SelectItem value="sand">{t("settings.themes.sand")}</SelectItem>
-              <SelectItem value="rose">{t("settings.themes.rose")}</SelectItem>
-              <SelectItem value="ocean">{t("settings.themes.ocean")}</SelectItem>
-              <SelectItem value="dark">{t("settings.themes.dark")}</SelectItem>
-              <SelectItem value="indigo">{t("settings.themes.indigo")}</SelectItem>
-              <SelectItem value="colorful">{t("settings.themes.colorful")}</SelectItem>
-              <SelectItem value="contrast">{t("settings.themes.contrast")}</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-3">
+            <ThemePreview theme={theme} className="w-28" />
+            <span className="text-sm font-medium">{t(`settings.themes.${theme}`)}</span>
+            <Button
+              type="button"
+              variant="outline"
+              className="ml-auto"
+              onClick={() => setThemePickerOpen(true)}
+            >
+              {t("settings.chooseTheme")}
+            </Button>
+          </div>
+          <ThemePickerDialog open={themePickerOpen} onClose={() => setThemePickerOpen(false)} />
         </div>
         <div>
           <Label>{t("settings.timezone")}</Label>

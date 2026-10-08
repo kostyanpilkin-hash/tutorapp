@@ -13,7 +13,14 @@ export type Theme =
   | "forest"
   | "sand"
   | "rose"
-  | "ocean";
+  | "ocean"
+  | "lavender"
+  | "peach"
+  | "graphite"
+  | "midnight"
+  | "ember"
+  | "pine"
+  | "plum";
 export type FinancePeriod = "day" | "week" | "month" | "year" | "custom";
 
 export interface Reminder {
