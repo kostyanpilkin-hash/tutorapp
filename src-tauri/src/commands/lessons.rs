@@ -1,0 +1,817 @@
+use crate::db::AppState;
+use crate::models::{Lesson, LessonInput, LessonStudent, LessonStudentInput, OverlapInfo, Reminder};
+use chrono::{DateTime, Duration, Utc};
+use rusqlite::{params, Connection, Row};
+use uuid::Uuid;
+use validator::Validate;
+const LESSON_SELECT: &str = "SELECT id, student_name, subject, start_at, duration_minutes, cost, currency, link, notes, materials, materials_link, status, payment_status, recurrence_rule, recurrence_parent_id, recurrence_instance_date, color, created_at, updated_at";
+fn load_reminders_conn(conn: &Connection, lesson_id: &str) -> Result<Vec<Reminder>, String> {
+    let mut stmt = conn
+        .prepare("SELECT id, lesson_id, minutes_before FROM reminders WHERE lesson_id = ?1")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([lesson_id], |row| {
+            Ok(Reminder {
+                id: row.get(0)?,
+                lesson_id: row.get(1)?,
+                minutes_before: row.get(2)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+fn load_lesson_students(conn: &Connection, lesson_id: &str) -> Result<Vec<LessonStudent>, String> {
+    let mut stmt = conn
+        .prepare("SELECT s.id, s.name, ls.cost, ls.currency, ls.payment_status, s.color, s.timezone, s.notes FROM lesson_students ls JOIN students s ON s.id = ls.student_id WHERE ls.lesson_id = ?1 ORDER BY s.name ASC")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![lesson_id], |row| {
+            Ok(LessonStudent {
+                student_id: row.get(0)?,
+                name: row.get(1)?,
+                cost: row.get(2)?,
+                currency: row.get(3)?,
+                payment_status: row.get(4)?,
+                color: row.get(5)?,
+                timezone: row.get(6)?,
+                lesson_note: row.get(7).unwrap_or_default(),
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+fn row_to_lesson(conn: &Connection, row: &Row) -> Result<Lesson, rusqlite::Error> {
+    let id: String = row.get(0)?;
+    let reminders = load_reminders_conn(conn, &id).map_err(|e| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+    })?;
+    let students = load_lesson_students(conn, &id).map_err(|e| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+    })?;
+    Ok(Lesson {
+        id,
+        student_name: row.get(1)?,
+        subject: row.get(2)?,
+        start_at: row.get(3)?,
+        duration_minutes: row.get(4)?,
+        cost: row.get(5)?,
+        currency: row.get(6)?,
+        link: row.get(7)?,
+        notes: row.get(8)?,
+        materials: row.get(9)?,
+        materials_link: row.get(10)?,
+        status: row.get(11)?,
+        payment_status: row.get(12)?,
+        recurrence_rule: row.get(13)?,
+        recurrence_parent_id: row.get(14)?,
+        recurrence_instance_date: row.get(15)?,
+        color: row.get(16)?,
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
+        reminders,
+        students,
+    })
+}
+fn insert_reminders(conn: &Connection, lesson_id: &str, minutes: &[i64]) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM reminders WHERE lesson_id = ?1",
+        params![lesson_id],
+    )
+    .map_err(|e| e.to_string())?;
+    for m in minutes {
+        conn.execute(
+            "INSERT INTO reminders (id, lesson_id, minutes_before) VALUES (?1, ?2, ?3)",
+            params![Uuid::new_v4().to_string(), lesson_id, m],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn same_instant_str(a: &str, b: &str) -> bool {
+    match (a.parse::<DateTime<Utc>>(), b.parse::<DateTime<Utc>>()) {
+        (Ok(da), Ok(db)) => da.timestamp() == db.timestamp(),
+        _ => a == b,
+    }
+}
+
+fn delete_lesson_cascade(conn: &Connection, id: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM reminders WHERE lesson_id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM lesson_students WHERE lesson_id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM lessons WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Keep a single exception per (parent, instance slot); prefer finalized status, then newest.
+fn dedupe_exceptions_for_instance(
+    conn: &Connection,
+    parent_id: &str,
+    instance_date: &str,
+) -> Result<Option<String>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, recurrence_instance_date, status, updated_at FROM lessons
+             WHERE recurrence_parent_id = ?1
+               AND recurrence_instance_date IS NOT NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(params![parent_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut matches: Vec<(String, String, String)> = Vec::new();
+    for row in rows {
+        let (id, inst, status, updated_at) = row.map_err(|e| e.to_string())?;
+        if same_instant_str(&inst, instance_date) {
+            matches.push((id, status, updated_at));
+        }
+    }
+    if matches.is_empty() {
+        return Ok(None);
+    }
+    matches.sort_by(|a, b| {
+        exception_status_rank(&b.1)
+            .cmp(&exception_status_rank(&a.1))
+            .then_with(|| b.2.cmp(&a.2))
+    });
+    let keep = matches[0].0.clone();
+    for (id, _, _) in matches.into_iter().skip(1) {
+        delete_lesson_cascade(conn, &id)?;
+    }
+    Ok(Some(keep))
+}
+
+fn exception_status_rank(status: &str) -> i32 {
+    match status {
+        "completed" => 4,
+        "no_show" => 3,
+        "cancelled" => 2,
+        _ => 1,
+    }
+}
+
+/// Remove duplicate exception rows across the whole DB (same parent + instance slot).
+pub(crate) fn dedupe_all_exception_slots(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, recurrence_parent_id, recurrence_instance_date, status, updated_at FROM lessons
+             WHERE recurrence_parent_id IS NOT NULL AND recurrence_parent_id != ''
+               AND recurrence_instance_date IS NOT NULL",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut groups: std::collections::HashMap<(String, i64), Vec<(String, String, String)>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        let (id, parent_id, instance_date, status, updated_at) = row.map_err(|e| e.to_string())?;
+        let ts = instance_date
+            .parse::<DateTime<Utc>>()
+            .map(|dt| dt.timestamp())
+            .unwrap_or(0);
+        groups
+            .entry((parent_id, ts))
+            .or_default()
+            .push((id, status, updated_at));
+    }
+
+    for mut items in groups.into_values() {
+        if items.len() < 2 {
+            continue;
+        }
+        items.sort_by(|a, b| {
+            exception_status_rank(&b.1)
+                .cmp(&exception_status_rank(&a.1))
+                .then_with(|| b.2.cmp(&a.2))
+        });
+        for (id, _, _) in items.into_iter().skip(1) {
+            delete_lesson_cascade(conn, &id)?;
+        }
+    }
+    Ok(())
+}
+fn student_names(conn: &Connection, students: &[LessonStudentInput]) -> Result<String, String> {
+    let mut names = Vec::new();
+    for s in students {
+        let name: String = conn
+            .query_row(
+                "SELECT name FROM students WHERE id = ?1",
+                params![s.student_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        names.push(name);
+    }
+    Ok(names.join(", "))
+}
+fn resolve_lesson_color(
+    conn: &Connection,
+    students: &[LessonStudentInput],
+    explicit: &Option<String>,
+) -> Option<String> {
+    if let Some(c) = explicit {
+        if !c.is_empty() {
+            return Some(c.clone());
+        }
+    }
+    if let Some(first) = students.first() {
+        if let Ok(color) = conn.query_row(
+            "SELECT color FROM students WHERE id = ?1",
+            params![first.student_id],
+            |r| r.get::<_, Option<String>>(0),
+        ) {
+            return color;
+        }
+    }
+    None
+}
+fn save_lesson_students(
+    conn: &Connection,
+    lesson_id: &str,
+    students: &[LessonStudentInput],
+    default_cost: Option<f64>,
+    default_currency: Option<String>,
+    default_payment: &str,
+) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM lesson_students WHERE lesson_id = ?1",
+        params![lesson_id],
+    )
+    .map_err(|e| e.to_string())?;
+    for s in students {
+        let cost = s.cost.or(default_cost);
+        let currency = s.currency.clone().or(default_currency.clone());
+        let payment = s
+            .payment_status
+            .clone()
+            .unwrap_or_else(|| default_payment.to_string());
+        conn.execute(
+            "INSERT INTO lesson_students (lesson_id, student_id, cost, currency, payment_status) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![lesson_id, s.student_id, cost, currency, payment],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+#[tauri::command]
+pub fn get_lessons(
+    state: tauri::State<AppState>,
+    from: String,
+    to: String,
+) -> Result<Vec<Lesson>, String> {
+    state.pool.with_conn(|conn| {
+        let _ = dedupe_all_exception_slots(conn);
+        let mut stmt = conn
+            .prepare(&format!(
+                "{LESSON_SELECT} FROM lessons WHERE (start_at >= ?1 AND start_at <= ?2)
+                 OR (recurrence_rule IS NOT NULL AND recurrence_rule != ''
+                     AND (recurrence_parent_id IS NULL OR recurrence_parent_id = '')
+                     AND start_at <= ?2)
+                 OR (recurrence_parent_id IS NOT NULL AND recurrence_parent_id != ''
+                     AND recurrence_instance_date IS NOT NULL
+                     AND recurrence_instance_date >= ?1 AND recurrence_instance_date <= ?2)
+                 ORDER BY start_at ASC"
+            ))
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![from, to], |row| row_to_lesson(conn, row))
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+}
+pub fn get_lessons_for_student(
+    state: &AppState,
+    student_id: &str,
+    from: Option<String>,
+    to: Option<String>,
+) -> Result<Vec<Lesson>, String> {
+    state.pool.with_conn(|conn| {
+        let _ = dedupe_all_exception_slots(conn);
+        if let (Some(f), Some(t)) = (from, to) {
+            let mut stmt = conn
+                .prepare(&format!(
+                    "{LESSON_SELECT} FROM lessons l WHERE l.id IN (SELECT lesson_id FROM lesson_students WHERE student_id = ?1) AND l.start_at >= ?2 AND l.start_at <= ?3 ORDER BY l.start_at DESC"
+                ))
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![student_id, f, t], |row| row_to_lesson(conn, row))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        } else {
+            let mut stmt = conn
+                .prepare(&format!(
+                    "{LESSON_SELECT} FROM lessons l WHERE l.id IN (SELECT lesson_id FROM lesson_students WHERE student_id = ?1) ORDER BY l.start_at DESC"
+                ))
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![student_id], |row| row_to_lesson(conn, row))
+                .map_err(|e| e.to_string())?;
+            rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+        }
+    })
+}
+#[tauri::command]
+pub fn get_lesson(state: tauri::State<AppState>, id: String) -> Result<Lesson, String> {
+    state.pool.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare(&format!("{LESSON_SELECT} FROM lessons WHERE id = ?1"))
+            .map_err(|e| e.to_string())?;
+        stmt.query_row(params![id], |row| row_to_lesson(conn, row))
+            .map_err(|e| e.to_string())
+    })
+}
+#[tauri::command]
+pub fn create_lesson(
+    state: tauri::State<AppState>,
+    input: LessonInput,
+) -> Result<Lesson, String> {
+    if let Err(errors) = input.validate() {
+        return Err(format!("Ошибка валидации: {}", errors));
+    }
+
+    // Exception for a series slot: update existing row instead of creating duplicates.
+    if let (Some(parent_id), Some(instance_date)) = (
+        input
+            .recurrence_parent_id
+            .as_ref()
+            .filter(|s| !s.is_empty()),
+        input
+            .recurrence_instance_date
+            .as_ref()
+            .filter(|s| !s.is_empty()),
+    ) {
+        let existing_id = state.pool.with_conn(|conn| {
+            conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+            let result = (|| -> Result<Option<String>, String> {
+                let keep = dedupe_exceptions_for_instance(conn, parent_id, instance_date)?;
+                let Some(keep_id) = keep else {
+                    return Ok(None);
+                };
+                let student_name = student_names(conn, &input.students)?;
+                let color = resolve_lesson_color(conn, &input.students, &input.color);
+                let now = Utc::now().to_rfc3339();
+                conn.execute(
+                    "UPDATE lessons SET student_name=?2, subject=?3, start_at=?4, duration_minutes=?5, cost=?6, currency=?7, link=?8, notes=?9, materials=?10, materials_link=?11, status=?12, payment_status=?13, recurrence_rule=?14, recurrence_parent_id=?15, recurrence_instance_date=?16, color=?17, updated_at=?18 WHERE id=?1",
+                    params![
+                        keep_id,
+                        student_name,
+                        input.subject,
+                        input.start_at,
+                        input.duration_minutes,
+                        input.cost,
+                        input.currency,
+                        input.link,
+                        input.notes,
+                        input.materials,
+                        input.materials_link,
+                        input.status,
+                        input.payment_status,
+                        Option::<String>::None,
+                        input.recurrence_parent_id,
+                        input.recurrence_instance_date,
+                        color,
+                        now,
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+                save_lesson_students(
+                    conn,
+                    &keep_id,
+                    &input.students,
+                    input.cost,
+                    input.currency.clone(),
+                    &input.payment_status,
+                )?;
+                insert_reminders(conn, &keep_id, &input.reminders)?;
+                Ok(Some(keep_id))
+            })();
+            match result {
+                Ok(v) => {
+                    conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+                    Ok(v)
+                }
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK");
+                    Err(e)
+                }
+            }
+        })?;
+        if let Some(id) = existing_id {
+            return get_lesson(state, id);
+        }
+    }
+
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    state.pool.with_conn(|conn| {
+        conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            let student_name = student_names(conn, &input.students)?;
+            let color = resolve_lesson_color(conn, &input.students, &input.color);
+            conn.execute(
+                "INSERT INTO lessons (id, student_name, subject, start_at, duration_minutes, cost, currency, link, notes, materials, materials_link, status, payment_status, recurrence_rule, recurrence_parent_id, recurrence_instance_date, color, created_at, updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+                params![
+                    id,
+                    student_name,
+                    input.subject,
+                    input.start_at,
+                    input.duration_minutes,
+                    input.cost,
+                    input.currency,
+                    input.link,
+                    input.notes,
+                    input.materials,
+                    input.materials_link,
+                    input.status,
+                    input.payment_status,
+                    input.recurrence_rule,
+                    input.recurrence_parent_id,
+                    input.recurrence_instance_date,
+                    color,
+                    now,
+                    now,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            save_lesson_students(
+                conn,
+                &id,
+                &input.students,
+                input.cost,
+                input.currency.clone(),
+                &input.payment_status,
+            )?;
+            insert_reminders(conn, &id, &input.reminders)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    })?;
+    get_lesson(state, id)
+}
+#[tauri::command]
+pub fn update_lesson(
+    state: tauri::State<AppState>,
+    id: String,
+    input: LessonInput,
+) -> Result<Lesson, String> {
+    if let Err(errors) = input.validate() {
+        return Err(format!("Ошибка валидации: {}", errors));
+    }
+    let now = Utc::now().to_rfc3339();
+    state.pool.with_conn(|conn| {
+        conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            let student_name = student_names(conn, &input.students)?;
+            let color = resolve_lesson_color(conn, &input.students, &input.color);
+            conn.execute(
+                "UPDATE lessons SET student_name=?2, subject=?3, start_at=?4, duration_minutes=?5, cost=?6, currency=?7, link=?8, notes=?9, materials=?10, materials_link=?11, status=?12, payment_status=?13, recurrence_rule=?14, recurrence_parent_id=?15, recurrence_instance_date=?16, color=?17, updated_at=?18 WHERE id=?1",
+                params![
+                    id,
+                    student_name,
+                    input.subject,
+                    input.start_at,
+                    input.duration_minutes,
+                    input.cost,
+                    input.currency,
+                    input.link,
+                    input.notes,
+                    input.materials,
+                    input.materials_link,
+                    input.status,
+                    input.payment_status,
+                    input.recurrence_rule,
+                    input.recurrence_parent_id,
+                    input.recurrence_instance_date,
+                    color,
+                    now,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            save_lesson_students(
+                conn,
+                &id,
+                &input.students,
+                input.cost,
+                input.currency.clone(),
+                &input.payment_status,
+            )?;
+            conn.execute("DELETE FROM reminders WHERE lesson_id = ?1", params![id])
+                .map_err(|e| e.to_string())?;
+            insert_reminders(conn, &id, &input.reminders)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
+    })?;
+    get_lesson(state, id)
+}
+#[tauri::command]
+pub fn delete_lesson(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+    state.pool.with_conn(|conn| {
+        conn.execute(
+            "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
+            params![id],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn delete_lesson_series(state: tauri::State<AppState>, id: String) -> Result<(), String> {
+    state.pool.with_conn(|conn| {
+        // First, check if this is a parent lesson
+        let is_parent: bool = conn
+            .query_row(
+                "SELECT COUNT(*) FROM lessons WHERE id = ?1 AND (recurrence_rule IS NOT NULL AND recurrence_rule != '')",
+                params![id],
+                |r| r.get::<_, i64>(0),
+            )
+            .map(|c| c > 0)
+            .unwrap_or(false);
+
+        if is_parent {
+            // Delete the parent and all its exceptions
+            conn.execute(
+                "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
+                params![id],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            // If it's an exception, find the parent and delete the whole series
+            if let Ok(parent_id) = conn.query_row(
+                "SELECT recurrence_parent_id FROM lessons WHERE id = ?1",
+                params![id],
+                |r| r.get::<_, String>(0),
+            ) {
+                if !parent_id.is_empty() {
+                    conn.execute(
+                        "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
+                        params![parent_id],
+                    )
+                    .map_err(|e| e.to_string())?;
+                } else {
+                    // No parent, just delete this lesson
+                    conn.execute(
+                        "DELETE FROM lessons WHERE id = ?1",
+                        params![id],
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+            } else {
+                // No parent found, just delete this lesson
+                conn.execute(
+                    "DELETE FROM lessons WHERE id = ?1",
+                    params![id],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    })
+}
+#[tauri::command]
+pub fn update_lesson_status(
+    state: tauri::State<AppState>,
+    id: String,
+    status: String,
+    payment_status: Option<String>,
+) -> Result<Lesson, String> {
+    let now = Utc::now().to_rfc3339();
+    state.pool.with_conn(|conn| {
+        if let Some(ps) = payment_status.clone() {
+            conn.execute(
+                "UPDATE lessons SET status = ?2, payment_status = ?3, updated_at = ?4 WHERE id = ?1",
+                params![id, status, ps, now],
+            )
+            .map_err(|e| e.to_string())?;
+            conn.execute(
+                "UPDATE lesson_students SET payment_status = ?2 WHERE lesson_id = ?1",
+                params![id, ps],
+            )
+            .ok();
+        } else {
+            conn.execute(
+                "UPDATE lessons SET status = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, status, now],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })?;
+    get_lesson(state, id)
+}
+#[tauri::command]
+pub fn check_overlaps(
+    state: tauri::State<AppState>,
+    start_at: String,
+    duration_minutes: i64,
+    exclude_id: Option<String>,
+) -> Result<Vec<OverlapInfo>, String> {
+    use crate::recurrence::{expand_weekly_starts, intervals_overlap, is_weekly};
+
+    let start: DateTime<Utc> = start_at
+        .parse::<DateTime<Utc>>()
+        .map_err(|e: chrono::ParseError| e.to_string())?;
+    let end = start + Duration::minutes(duration_minutes);
+    let range_from = start - Duration::days(1);
+    let range_to = end + Duration::days(8);
+
+    state.pool.with_conn(|conn| {
+        // Include cancelled *exceptions* so deleted series slots stay in the skip list.
+        // (Deleting a recurring instance creates status=cancelled with recurrence_parent_id.)
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, student_name, start_at, duration_minutes, recurrence_rule, recurrence_parent_id, recurrence_instance_date, status
+                 FROM lessons
+                 WHERE status != 'cancelled'
+                    OR (recurrence_parent_id IS NOT NULL AND recurrence_parent_id != '')",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, String>(7)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut overlaps = Vec::new();
+        let mut exceptions: std::collections::HashMap<String, Vec<DateTime<Utc>>> =
+            std::collections::HashMap::new();
+        let mut parents = Vec::new();
+        let mut regular = Vec::new();
+
+        let (exclude_series_id, exclude_instance_at) = match exclude_id.as_ref() {
+            Some(ex) if ex.contains("::") => {
+                let (pid, inst) = ex.split_once("::").unwrap();
+                let dt = inst.parse::<DateTime<Utc>>().ok();
+                (Some(pid.to_string()), dt)
+            }
+            _ => (None, None),
+        };
+
+        for row in rows {
+            let (id, student_name, other_start, other_dur, recurrence_rule, parent_id, instance_date, status) =
+                row.map_err(|e| e.to_string())?;
+
+            let excluded = Some(&id) == exclude_id.as_ref();
+            let is_cancelled = status == "cancelled";
+
+            let other_start: DateTime<Utc> = other_start
+                .parse::<DateTime<Utc>>()
+                .map_err(|e: chrono::ParseError| e.to_string())?;
+
+            if let Some(pid) = parent_id {
+                if let Some(ref inst) = instance_date {
+                    if let Ok(dt) = inst.parse::<DateTime<Utc>>() {
+                        exceptions.entry(pid).or_default().push(dt);
+                    }
+                }
+                // Cancelled exceptions only suppress the series slot; they are not an overlap.
+                if excluded || is_cancelled {
+                    continue;
+                }
+                let other_end = other_start + Duration::minutes(other_dur);
+                if intervals_overlap(start, end, other_start, other_end) {
+                    overlaps.push(OverlapInfo {
+                        id,
+                        student_name,
+                        start_at: other_start.to_rfc3339(),
+                        duration_minutes: other_dur,
+                    });
+                }
+                continue;
+            }
+
+            if excluded || is_cancelled {
+                continue;
+            }
+
+            if is_weekly(&recurrence_rule) {
+                parents.push((id, student_name, other_start, other_dur, recurrence_rule));
+            } else {
+                regular.push((id, student_name, other_start, other_dur));
+            }
+        }
+
+        for (id, student_name, other_start, other_dur) in regular {
+            let other_end = other_start + Duration::minutes(other_dur);
+            if intervals_overlap(start, end, other_start, other_end) {
+                overlaps.push(OverlapInfo {
+                    id,
+                    student_name,
+                    start_at: other_start.to_rfc3339(),
+                    duration_minutes: other_dur,
+                });
+            }
+        }
+
+        for (id, student_name, anchor, other_dur, rule) in parents {
+            let starts = expand_weekly_starts(anchor, &rule, range_from, range_to);
+            let skipped = exceptions.get(&id).cloned().unwrap_or_default();
+            for instance_start in starts {
+                if skipped.iter().any(|d| *d == instance_start) {
+                    continue;
+                }
+                if exclude_series_id.as_ref() == Some(&id)
+                    && exclude_instance_at == Some(instance_start)
+                {
+                    continue;
+                }
+                let instance_end = instance_start + Duration::minutes(other_dur);
+                if intervals_overlap(start, end, instance_start, instance_end) {
+                    overlaps.push(OverlapInfo {
+                        id: format!("{id}::{}", instance_start.to_rfc3339()),
+                        student_name: student_name.clone(),
+                        start_at: instance_start.to_rfc3339(),
+                        duration_minutes: other_dur,
+                    });
+                }
+            }
+        }
+
+        Ok(overlaps)
+    })
+}
+
+fn setting_timezone(conn: &rusqlite::Connection) -> String {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = 'timezone'",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .unwrap_or_else(|_| "Europe/Moscow".to_string())
+}
+
+fn today_bounds_in_tz(tz_name: &str) -> Result<(DateTime<Utc>, DateTime<Utc>), String> {
+    use chrono::TimeZone;
+    use chrono_tz::Tz;
+
+    let tz: Tz = tz_name.parse().unwrap_or(chrono_tz::Europe::Moscow);
+    let now_local = Utc::now().with_timezone(&tz);
+    let date = now_local.date_naive();
+    let from_local = tz
+        .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .ok_or_else(|| "Некорректное начало дня".to_string())?;
+    let to_local = tz
+        .from_local_datetime(&date.and_hms_opt(23, 59, 59).unwrap())
+        .single()
+        .ok_or_else(|| "Некорректный конец дня".to_string())?;
+    Ok((from_local.with_timezone(&Utc), to_local.with_timezone(&Utc)))
+}
+
+#[tauri::command]
+pub fn get_today_lessons(state: tauri::State<AppState>) -> Result<Vec<Lesson>, String> {
+    let (from, to) = state.pool.with_conn(|conn| {
+        let tz = setting_timezone(conn);
+        today_bounds_in_tz(&tz)
+    })?;
+    get_lessons(state, from.to_rfc3339(), to.to_rfc3339())
+}

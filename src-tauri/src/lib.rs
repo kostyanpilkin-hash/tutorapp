@@ -3,15 +3,18 @@ mod db;
 mod models;
 mod recurrence;
 mod scheduler;
+#[cfg(windows)]
+mod windows_toast;
 
-use commands::{finance::*, lessons::*, reminders::*, settings::*, shortcut::*, students::*};
-use db::init_db;
+use commands::{finance::*, lessons::*, reminders::*, settings::*, shortcut::*, students::*, students_currency::*};
+use db::{init_db, AppState};
 use scheduler::start_scheduler;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, WindowEvent,
 };
+use tauri_plugin_notification::NotificationExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -39,6 +42,7 @@ pub fn run() {
             create_lesson,
             update_lesson,
             delete_lesson,
+            delete_lesson_series,
             update_lesson_status,
             check_overlaps,
             get_today_lessons,
@@ -50,6 +54,8 @@ pub fn run() {
             snooze_reminder,
             create_desktop_shortcut,
             get_finance_report,
+            get_debt_lessons,
+            mark_debt_paid,
             get_students,
             get_student,
             create_student,
@@ -59,6 +65,9 @@ pub fn run() {
             remove_student_photo,
             get_student_lessons,
             get_student_finance,
+            update_student_lessons_currency,
+            get_student_settings_log,
+            apply_prepaid_lessons,
             get_student_photo_data_url,
         ])
         .setup(|app| {
@@ -77,7 +86,12 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        if let Some(state) = app.try_state::<AppState>() {
+                            state.scheduler_running.store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        app.exit(0)
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -96,7 +110,21 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            start_scheduler(app.handle().clone());
+            #[cfg(windows)]
+            if let Err(e) = windows_toast::ensure_app_toast_identity(app.handle()) {
+                eprintln!("Toast identity setup: {e}");
+            }
+            #[cfg(windows)]
+            if let Err(e) = commands::shortcut::ensure_desktop_shortcut(app.handle()) {
+                eprintln!("Desktop shortcut setup: {e}");
+            }
+            // Ask once so Windows allows branded toasts.
+            let _ = app.notification().request_permission();
+
+            if let Some(state) = app.try_state::<AppState>() {
+                start_scheduler(app.handle().clone(), state.scheduler_running.clone());
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {

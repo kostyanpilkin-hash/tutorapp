@@ -12,10 +12,12 @@ import {
   Plus,
   UserX,
   Wallet,
+  XCircle,
 } from "lucide-react";
 import type { Lesson } from "@/types/lesson";
-import { lessonDisplayColor, lessonStudentNames } from "@/types/lesson";
+import { lessonDisplayColor, lessonStudentNames, lessonStudentNotes } from "@/types/lesson";
 import { LessonStatusBadges } from "@/components/lesson/LessonStatusBadges";
+import { LinkifiedText } from "@/components/LinkifiedText";
 import { useLessonContextMenu } from "@/components/lesson/useLessonContextMenu";
 import { Button } from "@/components/ui/button";
 import {
@@ -212,10 +214,11 @@ export function TodayWidget({
                   className="absolute inset-y-0 left-0 w-1.5"
                   style={{ backgroundColor: color || "var(--primary)" }}
                 />
-                <div className="flex flex-col gap-3 p-4 pl-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-col gap-4 p-4 pl-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
                   <button
                     type="button"
-                    className="min-w-0 flex-1 text-left"
+                    className="w-full text-left"
                     onClick={() => onSelect(lesson)}
                   >
                     <div className="flex flex-wrap items-center gap-2">
@@ -236,12 +239,27 @@ export function TodayWidget({
                       {lesson.subject ? ` · ${lesson.subject}` : ""}
                     </div>
                   </button>
+                    {lessonStudentNotes(lesson).map((item) => (
+                      <div key={`${lesson.id}-${item.name}`} className="mt-2 text-sm">
+                        {lesson.students.length > 1 && (
+                          <span className="mr-1 text-xs font-medium text-muted-foreground">
+                            {item.name}:
+                          </span>
+                        )}
+                        <LinkifiedText className="inline" text={item.note} />
+                      </div>
+                    ))}
+                    {lesson.notes.trim() && (
+                      <LinkifiedText className="mt-1 text-sm text-muted-foreground" text={lesson.notes} />
+                    )}
+                  </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="grid w-full grid-cols-2 gap-1.5 sm:w-auto sm:min-w-[18rem]">
                     {canComplete && (
                       <Button
                         size="sm"
                         variant="secondary"
+                        className="gap-1.5 text-xs"
                         onClick={() =>
                           void runAction(
                             () => setLessonStatus(lesson, "completed"),
@@ -265,6 +283,7 @@ export function TodayWidget({
                       <Button
                         size="sm"
                         variant="outline"
+                        className="gap-1.5 text-xs"
                         onClick={() =>
                           void runAction(() => setLessonStatus(lesson, "no_show"), t("today.markedNoShow"))
                         }
@@ -273,10 +292,24 @@ export function TodayWidget({
                         {t("today.markNoShow")}
                       </Button>
                     )}
+                    {lesson.status === "scheduled" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs"
+                        onClick={() =>
+                          void runAction(() => setLessonStatus(lesson, "cancelled"), t("today.markedCancelled"))
+                        }
+                      >
+                        <XCircle className="h-4 w-4" />
+                        {t("today.markCancelled")}
+                      </Button>
+                    )}
                     {unpaid && lesson.status !== "cancelled" && (
                       <Button
                         size="sm"
                         variant="outline"
+                        className="gap-1.5 text-xs"
                         onClick={() =>
                           void runAction(() => setLessonPaid(lesson, true), t("today.markedPaid"))
                         }
@@ -285,31 +318,31 @@ export function TodayWidget({
                         {t("today.markPaid")}
                       </Button>
                     )}
-                    {lesson.link && (
-                      <>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label={t("lesson.openLink")}
-                          onClick={() => void openLessonLink(lesson)}
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label={t("lesson.copyLink")}
-                          onClick={() => {
-                            void copyLessonLink(lesson).then((ok) => {
-                              if (ok) useToastStore.getState().success(t("today.linkCopied"));
-                            });
-                          }}
-                        >
-                          <Copy className="h-4 w-4" />
-                        </Button>
-                      </>
-                    )}
                   </div>
+                  {lesson.link && (
+                    <div className="col-span-2 flex justify-end gap-1.5">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label={t("lesson.openLink")}
+                        onClick={() => void openLessonLink(lesson)}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label={t("lesson.copyLink")}
+                        onClick={() => {
+                          void copyLessonLink(lesson).then((ok) => {
+                            if (ok) useToastStore.getState().success(t("today.linkCopied"));
+                          });
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </article>
             );

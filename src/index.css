@@ -1,0 +1,297 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-fg);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-fg);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-fg);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-fg);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-fg);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --font-display: "Fraunces", "Segoe UI", Georgia, serif;
+  --font-sans: "Manrope", "Segoe UI", system-ui, sans-serif;
+}
+
+:root,
+.theme-light {
+  --bg: #f8fafc;
+  --fg: #0f172a;
+  --card: #ffffff;
+  --card-fg: #0f172a;
+  --primary: #2563eb;
+  --primary-fg: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-fg: #0f172a;
+  --muted: #f1f5f9;
+  --muted-fg: #64748b;
+  --accent: #e0e7ff;
+  --accent-fg: #1e3a8a;
+  --border: #e2e8f0;
+  --ring: #2563eb;
+  --destructive: #dc2626;
+}
+
+.theme-dark {
+  --bg: #0f172a;
+  --fg: #f8fafc;
+  --card: #1e293b;
+  --card-fg: #f8fafc;
+  --primary: #3b82f6;
+  --primary-fg: #ffffff;
+  --secondary: #334155;
+  --secondary-fg: #f8fafc;
+  --muted: #334155;
+  --muted-fg: #94a3b8;
+  --accent: #1e3a8a;
+  --accent-fg: #dbeafe;
+  --border: #334155;
+  --ring: #3b82f6;
+  --destructive: #ef4444;
+}
+
+.theme-colorful {
+  --bg: #fff7ed;
+  --fg: #431407;
+  --card: #ffffff;
+  --card-fg: #431407;
+  --primary: #ea580c;
+  --primary-fg: #ffffff;
+  --secondary: #ffedd5;
+  --secondary-fg: #9a3412;
+  --muted: #fed7aa;
+  --muted-fg: #c2410c;
+  --accent: #fef3c7;
+  --accent-fg: #92400e;
+  --border: #fdba74;
+  --ring: #ea580c;
+  --destructive: #dc2626;
+}
+
+/* Мята — свежая дневная */
+.theme-mint {
+  --bg: #f2fbf7;
+  --fg: #134e4a;
+  --card: #ffffff;
+  --card-fg: #134e4a;
+  --primary: #0d9488;
+  --primary-fg: #ffffff;
+  --secondary: #ccfbf1;
+  --secondary-fg: #115e59;
+  --muted: #e6f7f2;
+  --muted-fg: #0f766e;
+  --accent: #a7f3d0;
+  --accent-fg: #065f46;
+  --border: #99f6e4;
+  --ring: #0d9488;
+  --destructive: #dc2626;
+}
+
+/* Чернила и бумага — спокойная «репетиторская» */
+.theme-ink {
+  --bg: #f7f4ef;
+  --fg: #1c1917;
+  --card: #fffcf7;
+  --card-fg: #1c1917;
+  --primary: #1d4ed8;
+  --primary-fg: #ffffff;
+  --secondary: #efe9df;
+  --secondary-fg: #292524;
+  --muted: #ebe4d8;
+  --muted-fg: #57534e;
+  --accent: #dbe4f8;
+  --accent-fg: #1e3a8a;
+  --border: #d6d0c4;
+  --ring: #1d4ed8;
+  --destructive: #b91c1c;
+}
+
+/* Вечерний индиго — мягкая тёмная */
+.theme-indigo {
+  --bg: #121526;
+  --fg: #e8eaf6;
+  --card: #1b2038;
+  --card-fg: #e8eaf6;
+  --primary: #818cf8;
+  --primary-fg: #111827;
+  --secondary: #252b45;
+  --secondary-fg: #e8eaf6;
+  --muted: #252b45;
+  --muted-fg: #a5b4fc;
+  --accent: #312e81;
+  --accent-fg: #c7d2fe;
+  --border: #2f3658;
+  --ring: #818cf8;
+  --destructive: #f87171;
+}
+
+/* Контрастная — максимальная читаемость */
+.theme-contrast {
+  --bg: #ffffff;
+  --fg: #000000;
+  --card: #ffffff;
+  --card-fg: #000000;
+  --primary: #000000;
+  --primary-fg: #ffffff;
+  --secondary: #f0f0f0;
+  --secondary-fg: #000000;
+  --muted: #e8e8e8;
+  --muted-fg: #222222;
+  --accent: #ffff00;
+  --accent-fg: #000000;
+  --border: #000000;
+  --ring: #000000;
+  --destructive: #9f1239;
+}
+
+/* Лес — спокойный зелёный */
+.theme-forest {
+  --bg: #f3f7f2;
+  --fg: #14261a;
+  --card: #ffffff;
+  --card-fg: #14261a;
+  --primary: #2f6b3a;
+  --primary-fg: #ffffff;
+  --secondary: #e2efe4;
+  --secondary-fg: #1f3d28;
+  --muted: #e8f0ea;
+  --muted-fg: #4a6352;
+  --accent: #cfe6d4;
+  --accent-fg: #1b4332;
+  --border: #c5d6c9;
+  --ring: #2f6b3a;
+  --destructive: #b91c1c;
+}
+
+/* Песок — тёплый нейтральный */
+.theme-sand {
+  --bg: #f6f1e8;
+  --fg: #2a2118;
+  --card: #fffdf9;
+  --card-fg: #2a2118;
+  --primary: #8a5a2b;
+  --primary-fg: #ffffff;
+  --secondary: #efe4d4;
+  --secondary-fg: #3d2e20;
+  --muted: #ebe0d0;
+  --muted-fg: #6b5643;
+  --accent: #e7d3b3;
+  --accent-fg: #4a3420;
+  --border: #d9cbb8;
+  --ring: #8a5a2b;
+  --destructive: #b91c1c;
+}
+
+/* Роза — мягкий акцент */
+.theme-rose {
+  --bg: #faf5f6;
+  --fg: #2b1520;
+  --card: #ffffff;
+  --card-fg: #2b1520;
+  --primary: #be123c;
+  --primary-fg: #ffffff;
+  --secondary: #fce7ef;
+  --secondary-fg: #881337;
+  --muted: #f8e8ee;
+  --muted-fg: #9f1239;
+  --accent: #fecdd3;
+  --accent-fg: #9f1239;
+  --border: #f0cdd6;
+  --ring: #be123c;
+  --destructive: #9f1239;
+}
+
+/* Океан — прохладный сине-зелёный */
+.theme-ocean {
+  --bg: #f0f7fb;
+  --fg: #0c2a3a;
+  --card: #ffffff;
+  --card-fg: #0c2a3a;
+  --primary: #0e7490;
+  --primary-fg: #ffffff;
+  --secondary: #d7eef5;
+  --secondary-fg: #155e75;
+  --muted: #e4f3f8;
+  --muted-fg: #0f766e;
+  --accent: #a5f3fc;
+  --accent-fg: #164e63;
+  --border: #b6d9e6;
+  --ring: #0e7490;
+  --destructive: #dc2626;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, color-mix(in oklab, var(--primary) 12%, transparent), transparent 60%),
+    radial-gradient(900px 420px at 100% 0%, color-mix(in oklab, var(--accent) 55%, transparent), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--fg);
+  font-family: var(--font-sans);
+}
+
+html.theme-contrast {
+  --radius-sm: 0.125rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.375rem;
+}
+
+html.theme-contrast body {
+  background: var(--bg);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.35s ease-out both;
+}
+
+.animate-pop {
+  animation: pop 0.16s ease-out both;
+}

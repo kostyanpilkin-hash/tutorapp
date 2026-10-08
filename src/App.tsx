@@ -12,6 +12,7 @@ import { defaultRange } from "@/lib/recurrence";
 import type { CalendarView, Lesson } from "@/types/lesson";
 import { TodayWidget } from "@/components/TodayWidget";
 import { LessonFormDialog } from "@/components/lesson/LessonFormDialog";
+import { RescheduleLessonDialog } from "@/components/lesson/RescheduleLessonDialog";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import {
   WeekView,
@@ -44,6 +45,7 @@ export default function App() {
   } = useSettingsStore();
   const { expanded, todayLessons, todayLoading, loading, fetchRange, fetchDay, refresh } = useLessonStore();
   const [page, setPage] = useState<Page>("home");
+  const [todayDate, setTodayDate] = useState(() => new Date());
   const [formOpen, setFormOpen] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [createDate, setCreateDate] = useState<Date | undefined>();
@@ -51,18 +53,22 @@ export default function App() {
   const [studentCount, setStudentCount] = useState<number | null>(null);
   const [lessonsVersion, setLessonsVersion] = useState(0);
 
+  const goToToday = useCallback(() => {
+    setTodayDate(new Date());
+    setPage("home");
+  }, []);
+
   const reload = useCallback(async () => {
     if (page === "home") {
-      await fetchDay(anchorDate);
+      await fetchDay(todayDate);
       setLessonsVersion((v) => v + 1);
       return;
     }
 
     const { from, to } = defaultRange(view, anchorDate);
     await refresh(from, to);
-    await fetchDay(anchorDate);
     setLessonsVersion((v) => v + 1);
-  }, [page, view, anchorDate, refresh, fetchDay]);
+  }, [page, view, anchorDate, todayDate, refresh, fetchDay]);
 
   useEffect(() => {
     void load().then(() => i18n.changeLanguage(language));
@@ -70,12 +76,13 @@ export default function App() {
 
   useEffect(() => {
     if (!loaded) return;
-    if (page !== "home") {
-      const { from, to } = defaultRange(view, anchorDate);
-      void fetchRange(from, to);
+    if (page === "home") {
+      void fetchDay(todayDate);
+      return;
     }
-    void fetchDay(anchorDate);
-  }, [loaded, page, view, anchorDate, fetchRange, fetchDay]);
+    const { from, to } = defaultRange(view, anchorDate);
+    void fetchRange(from, to);
+  }, [loaded, page, view, anchorDate, todayDate, fetchRange, fetchDay]);
 
   useEffect(() => {
     if (!loaded || onboardingDone) return;
@@ -103,12 +110,16 @@ export default function App() {
   }, [t]);
 
   const openCreate = useCallback((date?: Date, studentIds?: string[]) => {
-    if (date) setAnchorDate(date);
+    const baseDate = page === "home" ? todayDate : anchorDate;
+    if (date) {
+      if (page === "home") setTodayDate(date);
+      else setAnchorDate(date);
+    }
     setSelectedLesson(null);
-    setCreateDate(date || anchorDate);
+    setCreateDate(date || baseDate);
     setCreateStudentIds(studentIds);
     setFormOpen(true);
-  }, [anchorDate, setAnchorDate]);
+  }, [page, anchorDate, todayDate, setAnchorDate]);
 
   const openEdit = (lesson: Lesson) => {
     setSelectedLesson(lesson);
@@ -131,7 +142,7 @@ export default function App() {
         switch (e.key) {
           case "1":
             e.preventDefault();
-            setPage("home");
+            goToToday();
             break;
           case "2":
             e.preventDefault();
@@ -158,7 +169,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openCreate]);
+  }, [openCreate, goToToday]);
 
   const views: { id: CalendarView; label: string }[] = [
     { id: "day", label: t("views.day") },
@@ -175,7 +186,7 @@ export default function App() {
         <aside className="flex w-56 flex-col border-r border-border/80 bg-card/85 p-4 backdrop-blur">
           <h1 className="font-display mb-6 text-2xl font-semibold tracking-tight text-primary">{t("app.title")}</h1>
           <nav className="flex flex-col gap-1">
-            <Button variant={page === "home" ? "default" : "ghost"} className="justify-start" onClick={() => setPage("home")}>
+            <Button variant={page === "home" ? "default" : "ghost"} className="justify-start" onClick={goToToday}>
               {t("app.today")}
             </Button>
             <Button variant={page === "calendar" ? "default" : "ghost"} className="justify-start" onClick={() => setPage("calendar")}>
@@ -217,9 +228,9 @@ export default function App() {
               <TodayWidget
                 lessons={todayLessons}
                 loading={todayLoading}
-                activeDate={anchorDate}
-                onPrevDay={() => setAnchorDate(subDays(anchorDate, 1))}
-                onNextDay={() => setAnchorDate(addDays(anchorDate, 1))}
+                activeDate={todayDate}
+                onPrevDay={() => setTodayDate(subDays(todayDate, 1))}
+                onNextDay={() => setTodayDate(addDays(todayDate, 1))}
                 onSelect={openEdit}
                 onCreate={() => openCreate()}
                 onChanged={() => void reload()}
@@ -319,10 +330,11 @@ export default function App() {
             if (!onboardingDone) void setOnboardingDone();
             useToastStore.getState().info(t("lesson.savedToast"), {
               label: t("app.today"),
-              onClick: () => setPage("home"),
+              onClick: goToToday,
             });
           }}
         />
+        <RescheduleLessonDialog />
         <ToastHost />
       </div>
     </ContextMenuProvider>

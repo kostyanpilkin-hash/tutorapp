@@ -28,3 +28,8 @@ dirs = "6"
 rfd = "0.15"
 base64 = "0.22"
 tauri-plugin-single-instance = "2.4.3"
+notify-rust = "4"
+validator = { version = "0.18", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
