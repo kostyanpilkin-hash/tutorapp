@@ -147,13 +147,13 @@ pub fn update_student(
     }
     let now = Utc::now().to_rfc3339();
     state.pool.with_conn(|conn| {
-        let (old_currency, old_cost): (Option<String>, Option<f64>) = conn
+        let (old_currency, old_cost, old_link): (Option<String>, Option<f64>, Option<String>) = conn
             .query_row(
-                "SELECT default_currency, default_cost FROM students WHERE id = ?1",
+                "SELECT default_currency, default_cost, default_link FROM students WHERE id = ?1",
                 params![id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-            .unwrap_or((None, None));
+            .unwrap_or((None, None, None));
 
         conn.execute(
             "UPDATE students SET name=?2, phone=?3, email=?4, messenger=?5, parents=?6,
@@ -207,6 +207,19 @@ pub fn update_student(
                     id,
                     old_cost.map(|c| c.to_string()),
                     input.default_cost.map(|c| c.to_string()),
+                    now,
+                ],
+            );
+        }
+        if old_link != input.default_link {
+            let _ = conn.execute(
+                "INSERT INTO student_settings_log (id, student_id, field, old_value, new_value, changed_at)
+                 VALUES (?1, ?2, 'default_link', ?3, ?4, ?5)",
+                params![
+                    Uuid::new_v4().to_string(),
+                    id,
+                    old_link,
+                    input.default_link,
                     now,
                 ],
             );

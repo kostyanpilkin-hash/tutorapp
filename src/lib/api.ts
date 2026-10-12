@@ -149,6 +149,12 @@ export const api = {
   updateStudentLessonsCurrency: (studentId: string, currency: string, cost: number) =>
     call(() => invoke<void>("update_student_lessons_currency", { studentId, currency, cost })),
 
+  countStudentLessonsForLinkUpdate: (studentId: string, link: string | null) =>
+    call(() => invoke<number>("count_student_lessons_for_link_update", { studentId, link })),
+
+  updateStudentLessonsLink: (studentId: string, link: string | null) =>
+    call(() => invoke<number>("update_student_lessons_link", { studentId, link })),
+
   getStudentSettingsLog: (studentId?: string) =>
     call(() => invoke<StudentSettingsLog[]>("get_student_settings_log", { studentId })),
 

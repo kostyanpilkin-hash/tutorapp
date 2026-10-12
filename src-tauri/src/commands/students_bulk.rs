@@ -3,6 +3,77 @@ use chrono::Utc;
 use rusqlite::params;
 use std::fs;
 
+fn link_update_subquery() -> &'static str {
+    r#"
+    SELECT l.id
+    FROM lessons l
+    JOIN lesson_students ls ON l.id = ls.lesson_id
+    WHERE ls.student_id = ?1
+      AND l.start_at >= ?2
+      AND (SELECT COUNT(*) FROM lesson_students WHERE lesson_id = l.id) = 1
+      AND l.link IS DISTINCT FROM ?3
+    "#
+}
+
+fn count_student_lessons_for_link_update_conn(
+    conn: &rusqlite::Connection,
+    student_id: &str,
+    link: Option<&str>,
+    now: &str,
+) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        &format!("SELECT COUNT(*) FROM ({})", link_update_subquery()),
+        params![student_id, now, link],
+        |r| r.get(0),
+    )
+}
+
+fn update_student_lessons_link_conn(
+    conn: &rusqlite::Connection,
+    student_id: &str,
+    link: Option<&str>,
+    now: &str,
+) -> Result<i64, rusqlite::Error> {
+    let subquery = link_update_subquery()
+        .replace("?3", "?5")
+        .replace("?2", "?4")
+        .replace("?1", "?3");
+    conn.execute(
+        &format!(
+            "UPDATE lessons SET link = ?1, updated_at = ?2 WHERE id IN ({})",
+            subquery
+        ),
+        params![link, now, student_id, now, link],
+    )?;
+    Ok(conn.changes() as i64)
+}
+
+#[tauri::command]
+pub fn count_student_lessons_for_link_update(
+    state: tauri::State<AppState>,
+    student_id: String,
+    link: Option<String>,
+) -> Result<i64, String> {
+    let now = Utc::now().to_rfc3339();
+    state.pool.with_conn(|conn| {
+        count_student_lessons_for_link_update_conn(conn, &student_id, link.as_deref(), &now)
+            .map_err(|e| e.to_string())
+    })
+}
+
+#[tauri::command]
+pub fn update_student_lessons_link(
+    state: tauri::State<AppState>,
+    student_id: String,
+    link: Option<String>,
+) -> Result<i64, String> {
+    let now = Utc::now().to_rfc3339();
+    state.pool.with_conn(|conn| {
+        update_student_lessons_link_conn(conn, &student_id, link.as_deref(), &now)
+            .map_err(|e| e.to_string())
+    })
+}
+
 #[tauri::command]
 pub fn update_student_lessons_currency(
     state: tauri::State<AppState>,
@@ -187,4 +258,116 @@ pub fn get_student_photo_data_url(path: String) -> Result<String, String> {
         _ => "image/jpeg",
     };
     Ok(format!("data:{};base64,{}", mime, STANDARD.encode(bytes)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{Duration, Utc};
+    use rusqlite::{Connection, params};
+
+    fn test_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        conn
+    }
+
+    fn insert_student(conn: &Connection, id: &str, name: &str) {
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO students (id, name, notes, archived, created_at, updated_at)
+             VALUES (?1, ?2, '', 0, ?3, ?3)",
+            params![id, name, now],
+        )
+        .unwrap();
+    }
+
+    fn insert_lesson(
+        conn: &Connection,
+        id: &str,
+        start_at: &str,
+        link: Option<&str>,
+        students: &[&str],
+    ) {
+        let now = Utc::now().to_rfc3339();
+        let student_name = students
+            .first()
+            .map(|sid| {
+                conn.query_row(
+                    "SELECT name FROM students WHERE id = ?1",
+                    params![sid],
+                    |r| r.get::<_, String>(0),
+                )
+                .unwrap_or_default()
+            })
+            .unwrap_or_default();
+        conn.execute(
+            "INSERT INTO lessons (id, student_name, subject, start_at, duration_minutes, cost, currency, link, notes, materials, status, payment_status, created_at, updated_at)
+             VALUES (?1, ?2, 'Math', ?3, 60, 20.0, 'USD', ?4, '', '', 'scheduled', 'unpaid', ?5, ?5)",
+            params![id, student_name, start_at, link, now],
+        )
+        .unwrap();
+        for sid in students {
+            conn.execute(
+                "INSERT INTO lesson_students (lesson_id, student_id, cost, currency, payment_status)
+                 VALUES (?1, ?2, NULL, NULL, 'unpaid')",
+                params![id, sid],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn link_update_counts_only_future_single_student_lessons() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        let future = (Utc::now() + Duration::days(1)).to_rfc3339();
+        let past = (Utc::now() - Duration::days(1)).to_rfc3339();
+        insert_lesson(&conn, "l_future", &future, None, &["s1"]);
+        insert_lesson(&conn, "l_past", &past, None, &["s1"]);
+
+        let now = Utc::now().to_rfc3339();
+        let count = count_student_lessons_for_link_update_conn(&conn, "s1", Some("https://meet"), &now).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn link_update_excludes_group_lessons() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_student(&conn, "s2", "Maria");
+        let future = (Utc::now() + Duration::days(1)).to_rfc3339();
+        insert_lesson(&conn, "l_single", &future, None, &["s1"]);
+        insert_lesson(&conn, "l_group", &future, None, &["s1", "s2"]);
+
+        let now = Utc::now().to_rfc3339();
+        let count = count_student_lessons_for_link_update_conn(&conn, "s1", Some("https://meet"), &now).unwrap();
+        assert_eq!(count, 1);
+
+        let updated = update_student_lessons_link_conn(&conn, "s1", Some("https://meet"), &now).unwrap();
+        assert_eq!(updated, 1);
+
+        let single_link: Option<String> = conn
+            .query_row("SELECT link FROM lessons WHERE id = 'l_single'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(single_link.as_deref(), Some("https://meet"));
+
+        let group_link: Option<String> = conn
+            .query_row("SELECT link FROM lessons WHERE id = 'l_group'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(group_link.as_deref(), None);
+    }
+
+    #[test]
+    fn link_update_skips_lessons_with_same_link() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        let future = (Utc::now() + Duration::days(1)).to_rfc3339();
+        insert_lesson(&conn, "l_same", &future, Some("https://meet"), &["s1"]);
+
+        let now = Utc::now().to_rfc3339();
+        let count = count_student_lessons_for_link_update_conn(&conn, "s1", Some("https://meet"), &now).unwrap();
+        assert_eq!(count, 0);
+    }
 }

@@ -62,6 +62,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
   const [saving, setSaving] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [previousCurrency, setPreviousCurrency] = useState<string>("USD");
+  const [previousLink, setPreviousLink] = useState<string | null>(null);
   const [currencyChangeDialog, setCurrencyChangeDialog] = useState<{
     open: boolean;
     oldCurrency: string;
@@ -73,6 +74,11 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     oldCurrency: string;
     newCurrency: string;
   } | null>(null);
+  const [linkUpdateDialog, setLinkUpdateDialog] = useState<{
+    open: boolean;
+    count: number;
+    link: string | null;
+  } | null>(null);
   const [newCost, setNewCost] = useState<string>("");
 
   useEffect(() => {
@@ -82,11 +88,13 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
       setPhotoPath(student.photoPath ?? null);
       setCreatedId(null);
       setPreviousCurrency(student.defaultCurrency || "USD");
+      setPreviousLink(student.defaultLink ?? null);
     } else {
       setForm({ name: "", notes: "", lessonNote: "", defaultDuration: 60, defaultCurrency: "USD", paidLessons: 0 });
       setPhotoPath(null);
       setCreatedId(null);
       setPreviousCurrency("USD");
+      setPreviousLink(null);
     }
   }, [open, student]);
 
@@ -97,6 +105,20 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
   const needsTimezone = form.timezone && form.timezone !== tutorTimezone;
 
   const studentId = student?.id ?? createdId;
+
+  const handleLinkUpdate = async () => {
+    const targetId = student?.id ?? createdId;
+    if (!targetId || (previousLink ?? null) === (form.defaultLink ?? null)) {
+      onClose();
+      return;
+    }
+    const count = await api.countStudentLessonsForLinkUpdate(targetId, form.defaultLink || null);
+    if (count === 0) {
+      onClose();
+      return;
+    }
+    setLinkUpdateDialog({ open: true, count, link: form.defaultLink || null });
+  };
 
   const save = async () => {
     if (!form.name.trim()) return;
@@ -111,7 +133,13 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
       });
       return;
     }
-    await doSave();
+    setSaving(true);
+    try {
+      await doSave();
+      await handleLinkUpdate();
+    } finally {
+      setSaving(false);
+    }
   };
 
   const doSave = async () => {
@@ -127,11 +155,9 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
       if (student) {
         const saved = await api.updateStudent(student.id, payload);
         onSaved(saved);
-        onClose();
       } else if (createdId) {
         const saved = await api.updateStudent(createdId, payload);
         onSaved(saved);
-        onClose();
       } else {
         const saved = await api.createStudent(payload);
         setCreatedId(saved.id);
@@ -149,7 +175,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     }
   };
 
-  const handleCurrencyChoice = (updateAll: boolean) => {
+  const handleCurrencyChoice = async (updateAll: boolean) => {
     const dlg = currencyChangeDialog;
     setCurrencyChangeDialog(null);
     if (!dlg) return;
@@ -162,7 +188,13 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
         newCurrency: dlg.newCurrency,
       });
     } else {
-      void doSave();
+      setSaving(true);
+      try {
+        await doSave();
+        await handleLinkUpdate();
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
@@ -176,9 +208,30 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     try {
       await doSave();
       await api.updateStudentLessonsCurrency(dlg.studentId, dlg.newCurrency, cost);
+      await handleLinkUpdate();
     } finally {
       setSaving(false);
     }
+  };
+
+  const confirmLinkUpdate = async () => {
+    const dlg = linkUpdateDialog;
+    setLinkUpdateDialog(null);
+    if (!dlg) return;
+    const targetId = student?.id ?? createdId;
+    if (!targetId) return;
+    setSaving(true);
+    try {
+      await api.updateStudentLessonsLink(targetId, dlg.link);
+    } finally {
+      setSaving(false);
+    }
+    onClose();
+  };
+
+  const skipLinkUpdate = () => {
+    setLinkUpdateDialog(null);
+    onClose();
   };
 
   const pickPhoto = async () => {
@@ -449,6 +502,28 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
             onClick={() => void confirmUpdateCost()}
           >
             {t("students.save")}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog
+      open={linkUpdateDialog?.open ?? false}
+      onOpenChange={(v) => !v && skipLinkUpdate()}
+    >
+      <DialogContent className="max-w-md z-[130]" overlayClassName="z-[125]">
+        <DialogHeader>
+          <DialogTitle>{t("students.linkUpdateTitle")}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          {t("students.linkUpdateDesc", { count: linkUpdateDialog?.count })}
+        </p>
+        <div className="flex flex-col gap-2 pt-2">
+          <Button onClick={() => void confirmLinkUpdate()}>
+            {t("students.linkUpdateAction")}
+          </Button>
+          <Button variant="outline" onClick={skipLinkUpdate}>
+            {t("students.linkUpdateSkip")}
           </Button>
         </div>
       </DialogContent>

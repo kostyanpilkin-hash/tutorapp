@@ -6,7 +6,7 @@ mod scheduler;
 #[cfg(windows)]
 mod windows_toast;
 
-use commands::{finance::*, lessons::*, reminders::*, settings::*, shortcut::*, students::*, students_currency::*};
+use commands::{finance::*, lessons::*, reminders::*, settings::*, shortcut::*, students::*, students_bulk::*};
 use db::{init_db, AppState};
 use scheduler::start_scheduler;
 use tauri::{
@@ -66,6 +66,8 @@ pub fn run() {
             get_student_lessons,
             get_student_finance,
             update_student_lessons_currency,
+            count_student_lessons_for_link_update,
+            update_student_lessons_link,
             get_student_settings_log,
             apply_prepaid_lessons,
             get_student_photo_data_url,
