@@ -24,6 +24,9 @@ export const useRescheduleLessonStore = create<RescheduleState>((set) => ({
   close: () => set({ lesson: null, onChanged: undefined }),
 }));
 
+const START_HOUR = 7;
+const END_HOUR = 24;
+
 function startAt(date: string, hour: number, minute: number): Date {
   const [year, month, day] = date.split("-").map(Number);
   return new Date(year, month - 1, day, hour, minute, 0, 0);
@@ -56,7 +59,7 @@ export function RescheduleLessonDialog() {
     setSelected(null);
 
     const candidates: Date[] = [];
-    for (let minutes = 8 * 60; minutes + lesson.durationMinutes <= 22 * 60; minutes += 30) {
+    for (let minutes = START_HOUR * 60; minutes + lesson.durationMinutes <= END_HOUR * 60; minutes += 30) {
       candidates.push(startAt(date, Math.floor(minutes / 60), minutes % 60));
     }
 

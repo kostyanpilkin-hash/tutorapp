@@ -58,19 +58,22 @@ export function SelectTrigger({
 export function SelectContent({
   className,
   children,
+  portal = true,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
-  return (
-    <SelectPrimitive.Portal>
-      <SelectPrimitive.Content
-        className={cn("z-[80] overflow-hidden rounded-md border border-border bg-card shadow-md", className)}
-        position="popper"
-        {...props}
-      >
-        <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
-      </SelectPrimitive.Content>
-    </SelectPrimitive.Portal>
+}: React.ComponentProps<typeof SelectPrimitive.Content> & { portal?: boolean }) {
+  const content = (
+    <SelectPrimitive.Content
+      className={cn("z-[80] overflow-hidden rounded-md border border-border bg-card shadow-md", className)}
+      position="popper"
+      {...props}
+    >
+      <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
+    </SelectPrimitive.Content>
   );
+  if (portal) {
+    return <SelectPrimitive.Portal>{content}</SelectPrimitive.Portal>;
+  }
+  return content;
 }
 
 export function SelectItem({

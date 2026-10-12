@@ -1,3 +1,5 @@
+export const CURRENCIES = ["USD", "EUR", "BYN", "RUB"] as const;
+
 const CURRENCY_ORDER = ["USD", "EUR", "BYN", "RUB"];
 
 export function numberLocaleFromLang(lang: string): string {

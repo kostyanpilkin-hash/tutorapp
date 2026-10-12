@@ -4,6 +4,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Student, StudentInput } from "@/types/student";
 import { studentToInput } from "@/types/student";
 import { api } from "@/lib/api";
+import { CURRENCIES } from "@/lib/money";
 import { COMMON_TIMEZONES, getTimezoneOffset, messengerUrl } from "@/lib/contacts";
 import { StudentAvatar } from "./StudentAvatar";
 import { LinkifiedText } from "@/components/LinkifiedText";
@@ -293,7 +294,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
               onValueChange={(v) => set("timezone", v === "__none__" ? null : v)}
             >
               <SelectTrigger><SelectValue placeholder={t("students.timezoneOptional")} /></SelectTrigger>
-              <SelectContent>
+              <SelectContent portal={false}>
                 <SelectItem value="__none__">{t("students.timezoneSame")}</SelectItem>
                 {COMMON_TIMEZONES.map((tz) => (
                   <SelectItem key={tz} value={tz}>{tz} ({getTimezoneOffset(tz)})</SelectItem>
@@ -320,11 +321,10 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
                 onValueChange={(v) => set("defaultCurrency", v as StudentInput["defaultCurrency"])}
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
-                  <SelectItem value="BYN">BYN</SelectItem>
-                  <SelectItem value="RUB">RUB</SelectItem>
+                <SelectContent portal={false}>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

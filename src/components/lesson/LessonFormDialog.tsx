@@ -6,6 +6,7 @@ import { lessonToInput } from "@/types/lesson";
 import type { Student } from "@/types/student";
 import { studentToInput } from "@/types/student";
 import { api } from "@/lib/api";
+import { CURRENCIES } from "@/lib/money";
 import { formatTimeInTimezone } from "@/lib/contacts";
 import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, withUntil, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
 import { hrefFor, textHasLinks } from "@/lib/linkify";
@@ -686,10 +687,9 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                 <Select value={currency} onValueChange={setCurrency}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                    <SelectItem value="BYN">BYN</SelectItem>
-                    <SelectItem value="RUB">RUB</SelectItem>
+                    {CURRENCIES.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -732,10 +732,9 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                         >
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="USD">USD</SelectItem>
-                            <SelectItem value="EUR">EUR</SelectItem>
-                            <SelectItem value="BYN">BYN</SelectItem>
-                            <SelectItem value="RUB">RUB</SelectItem>
+                            {CURRENCIES.map((c) => (
+                              <SelectItem key={c} value={c}>{c}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
