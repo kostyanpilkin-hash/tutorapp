@@ -768,18 +768,7 @@ html.theme-mica body { background: var(--bg); }
   animation: pop 0.16s ease-out both;
 }
 
-/* ===== Вау-эффект: macOS traffic lights ===== */
-html.theme-mac aside::before,
-html.theme-cupertino aside::before {
-  content: "";
-  display: block;
-  height: 14px;
-  margin: -6px 0 14px -4px;
-  background:
-    radial-gradient(circle 6px at 14px 50%, #ff5f57 97%, transparent),
-    radial-gradient(circle 6px at 36px 50%, #febc2e 97%, transparent),
-    radial-gradient(circle 6px at 58px 50%, #28c840 97%, transparent);
-}
+/* ===== Фирменный вау-эффект ===== */
 
 /* Мак — акрил и мягкие тени */
 html.theme-mac aside {
@@ -836,3 +825,131 @@ html.theme-discord aside h1 {
   padding-bottom: 10px;
 }
 html.theme-discord ::selection { background: rgb(88 101 242 / 0.4); }
+
+/* ===== Liquid Glass (macOS Tahoe) — Мак и Купертино ===== */
+html.theme-mac {
+  --card: rgb(255 255 255 / 0.68);
+  --sidebar-bg: rgb(240 240 245 / 0.55);
+}
+html.theme-cupertino {
+  --card: rgb(28 28 30 / 0.72);
+  --sidebar-bg: rgb(18 18 20 / 0.6);
+}
+html.theme-mac aside,
+html.theme-cupertino aside {
+  backdrop-filter: blur(34px) saturate(1.9);
+  border-right: 1px solid rgb(255 255 255 / 0.18) !important;
+  box-shadow: inset -1px 0 0 rgb(255 255 255 / 0.1);
+}
+html.theme-mac [role="dialog"],
+html.theme-mac [role="menu"],
+html.theme-cupertino [role="dialog"],
+html.theme-cupertino [role="menu"] {
+  backdrop-filter: blur(44px) saturate(1.9);
+  box-shadow:
+    0 24px 70px rgb(0 0 0 / 0.28),
+    inset 0 1px 0 rgb(255 255 255 / 0.45) !important;
+}
+html.theme-cupertino [role="dialog"],
+html.theme-cupertino [role="menu"] {
+  box-shadow:
+    0 24px 70px rgb(0 0 0 / 0.6),
+    inset 0 1px 0 rgb(255 255 255 / 0.12) !important;
+}
+html.theme-mac button.bg-primary,
+html.theme-cupertino button.bg-primary {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.35), 0 2px 8px rgb(0 0 0 / 0.15);
+}
+html.theme-cupertino button.bg-primary {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 2px 8px rgb(0 0 0 / 0.4);
+}
+
+/* ===== Остальные фирменные ===== */
+
+/* Спотифай — зелёное свечение сайдбара, жирные заголовки */
+html.theme-spotify aside {
+  background: linear-gradient(165deg, rgb(29 185 84 / 0.16) 0%, transparent 34%), #000000;
+}
+html.theme-spotify aside h1,
+html.theme-spotify .font-display {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+html.theme-spotify ::selection { background: rgb(29 185 84 / 0.35); }
+
+/* Редактор — статус-бар VS Code снизу окна */
+html.theme-editor body::after {
+  content: "main*    Ln 1, Col 1    UTF-8    Prettier    notifications";
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: 22px;
+  padding: 0 10px;
+  background: #007acc;
+  color: #ffffff;
+  font: 11px/22px "Segoe UI", sans-serif;
+  letter-spacing: 0.02em;
+  z-index: 9999;
+  pointer-events: none;
+}
+html.theme-editor main { padding-bottom: 34px; }
+html.theme-editor ::selection { background: rgb(0 122 204 / 0.4); }
+
+/* Гитхаб — inset-хайлайт на кнопках, строгие бордеры */
+html.theme-github button {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+html.theme-github aside nav button.bg-primary {
+  border: 1px solid rgb(240 246 252 / 0.1);
+}
+html.theme-github ::selection { background: rgb(88 166 255 / 0.3); }
+
+/* Слэк — каналы белым текстом, hover-полупрозрачность */
+html.theme-slack aside nav button {
+  color: #f6e8f7;
+  font-weight: 500;
+}
+html.theme-slack aside nav button:hover {
+  background: rgb(255 255 255 / 0.09);
+  color: #ffffff;
+}
+html.theme-slack aside nav button.bg-primary {
+  background: rgb(255 255 255 / 0.14);
+  color: #ffffff;
+}
+html.theme-slack ::selection { background: rgb(54 197 240 / 0.35); }
+
+/* Ноушн — мелкий серый сайдбар, почти невидимые границы */
+html.theme-notion aside nav button {
+  color: #5f5e5b;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+html.theme-notion aside nav button:hover {
+  background: #ebeae8;
+}
+html.theme-notion aside nav button.bg-primary {
+  background: #e9e7e2;
+  color: #37352f;
+}
+html.theme-notion ::selection { background: rgb(35 131 226 / 0.2); }
+
+/* Материал — FAB и тональные пилюли M3 */
+html.theme-material aside > button.mt-auto {
+  border-radius: 16px;
+  min-height: 56px;
+  box-shadow: 0 4px 8px rgb(0 0 0 / 0.22), 0 2px 4px rgb(0 0 0 / 0.14);
+}
+html.theme-material aside nav button.bg-primary {
+  background: #d3e3fd;
+  color: #041e49;
+  border-radius: 9999px;
+}
+html.theme-material ::selection { background: rgb(26 115 232 / 0.25); }
+
+/* Мика — сильный акрил Win11 */
+html.theme-mica aside {
+  background: rgb(250 250 252 / 0.72);
+  backdrop-filter: blur(40px) saturate(1.6);
+  border-right-color: rgb(0 0 0 / 0.05) !important;
+}
+html.theme-mica ::selection { background: rgb(0 103 192 / 0.2); }
