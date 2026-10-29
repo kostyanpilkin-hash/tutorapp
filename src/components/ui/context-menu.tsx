@@ -24,6 +24,7 @@ export interface ContextMenuItem {
   destructive?: boolean;
   separator?: boolean;
   onSelect?: () => void;
+  children?: ContextMenuItem[];
 }
 
 interface ContextMenuApi {
@@ -65,6 +66,91 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 
   const api = useMemo(() => ({ open, close }), [open, close]);
 
+  const flipSubLeft = menu !== null && menu.x + 200 + 200 > window.innerWidth;
+
+  const renderItem = (item: ContextMenuItem) => {
+    if (item.separator) {
+      return <div key={item.id} className="my-1 h-px bg-border" />;
+    }
+    if (item.children && item.children.length > 0) {
+      return (
+        <div key={item.id} className="group relative">
+          <button
+            type="button"
+            role="menuitem"
+            disabled={item.disabled}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+              item.destructive
+                ? "text-destructive hover:bg-destructive/10"
+                : "hover:bg-muted",
+              item.disabled && "pointer-events-none opacity-40",
+            )}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+            <span className="ml-auto text-muted-foreground">›</span>
+          </button>
+          <div
+            className={cn(
+              "absolute top-0 hidden min-w-[180px] rounded-xl border border-border bg-card p-1 shadow-xl group-hover:block",
+              flipSubLeft ? "right-full pr-1" : "left-full pl-1",
+            )}
+          >
+            {item.children.map((sub) =>
+              sub.separator ? (
+                <div key={sub.id} className="my-1 h-px bg-border" />
+              ) : (
+                <button
+                  key={sub.id}
+                  type="button"
+                  role="menuitem"
+                  disabled={sub.disabled}
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                    sub.destructive
+                      ? "text-destructive hover:bg-destructive/10"
+                      : "hover:bg-muted",
+                    sub.disabled && "pointer-events-none opacity-40",
+                  )}
+                  onClick={() => {
+                    close();
+                    sub.onSelect?.();
+                  }}
+                >
+                  {sub.icon}
+                  <span>{sub.label}</span>
+                </button>
+              ),
+            )}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <button
+        key={item.id}
+        type="button"
+        role="menuitem"
+        disabled={item.disabled}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+          item.destructive
+            ? "text-destructive hover:bg-destructive/10"
+            : "hover:bg-muted",
+          item.disabled && "pointer-events-none opacity-40",
+        )}
+        onClick={() => {
+          close();
+          item.onSelect?.();
+        }}
+      >
+        {item.icon}
+        <span>{item.label}</span>
+      </button>
+    );
+  };
+
   return (
     <Ctx.Provider value={api}>
       {children}
@@ -77,32 +163,7 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
               style={{ left: menu.x, top: menu.y }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              {menu.items.map((item) =>
-                item.separator ? (
-                  <div key={item.id} className="my-1 h-px bg-border" />
-                ) : (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="menuitem"
-                    disabled={item.disabled}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors",
-                      item.destructive
-                        ? "text-destructive hover:bg-destructive/10"
-                        : "hover:bg-muted",
-                      item.disabled && "pointer-events-none opacity-40",
-                    )}
-                    onClick={() => {
-                      close();
-                      item.onSelect?.();
-                    }}
-                  >
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </button>
-                ),
-              )}
+              {menu.items.map(renderItem)}
             </div>
           </div>,
           document.body,

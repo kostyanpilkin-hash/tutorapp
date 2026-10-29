@@ -98,6 +98,8 @@ const be = {
     rescheduleSeriesHint: "Пачынаючы з {{date}} заняткі серыі будуць праводзіцца ў новы час. Мінулыя заняткі не зменяцца.",
     seriesMovedToast: "Серыя перанесена",
     deleteThis: "Выдаліць гэты занятак",
+    deleteAction: "Выдаліць",
+    rescheduleThis: "Толькі гэты занятак",
     savedToast: "Занятак захаваны",
     undoFailed: "Не ўдалося адмяніць",
   },

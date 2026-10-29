@@ -98,6 +98,8 @@ const en = {
     rescheduleSeriesHint: "Starting from {{date}}, series lessons will take place at the new time. Past lessons stay unchanged.",
     seriesMovedToast: "Series moved",
     deleteThis: "Delete this lesson",
+    deleteAction: "Delete",
+    rescheduleThis: "This lesson only",
     savedToast: "Lesson saved",
     undoFailed: "Could not undo",
   },
