@@ -61,7 +61,7 @@ const be = {
     saveAnyway: "Захаваць усё роўна",
     confirmDeleteLesson: "Выдаліць гэтае занятак?",
     deleteSeries: "Выдаліць серыю",
-    deleteSeriesConfirm: "Выдаліць усю серыю паўтаральных заняткаў?",
+    deleteSeriesConfirm: "Выдаліць гэты і ўсе наступныя заняткі серыі? Мінулыя заняткі застануцца.",
     seriesDeleted: "Серыя выдалена",
     recurrence: "Паўтарэнне",
     noRecurrence: "Не паўтараць",

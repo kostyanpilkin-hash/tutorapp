@@ -61,7 +61,7 @@ const en = {
     saveAnyway: "Save anyway",
     confirmDeleteLesson: "Delete this lesson?",
     deleteSeries: "Delete series",
-    deleteSeriesConfirm: "Delete the entire recurring series?",
+    deleteSeriesConfirm: "Delete this and all following lessons in the series? Past lessons will remain.",
     seriesDeleted: "Series deleted",
     recurrence: "Repeat",
     noRecurrence: "No repeat",

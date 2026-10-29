@@ -43,6 +43,8 @@ pub fn run() {
             update_lesson,
             delete_lesson,
             delete_lesson_series,
+            delete_lesson_series_from_instance,
+            restore_lesson_archive,
             update_lesson_status,
             check_overlaps,
             get_today_lessons,

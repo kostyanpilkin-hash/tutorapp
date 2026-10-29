@@ -14,6 +14,7 @@ import {
   copyLessonLink,
   deleteLessonInstance,
   deleteLessonSeries,
+  restoreLessonArchive,
   lessonPaymentStatus,
   openLessonLink,
   setLessonPaid,
@@ -55,6 +56,26 @@ export function useLessonContextMenu({ onOpen, onChanged }: Options) {
           onClick: () => {
             void result
               .undo()
+              .then(() => onChanged())
+              .catch(() => useToastStore.getState().error(t("lesson.undoFailed")));
+          },
+        });
+      } catch {
+        // api already toasts errors
+      }
+    })();
+  };
+
+  const deleteSeriesAction = (lesson: Lesson) => () => {
+    if (!window.confirm(t("lesson.deleteSeriesConfirm"))) return;
+    void (async () => {
+      try {
+        const { archiveId } = await deleteLessonSeries(lesson);
+        onChanged();
+        useToastStore.getState().info(t("lesson.seriesDeleted"), {
+          label: t("common.undo"),
+          onClick: () => {
+            void restoreLessonArchive(archiveId)
               .then(() => onChanged())
               .catch(() => useToastStore.getState().error(t("lesson.undoFailed")));
           },
@@ -127,52 +148,46 @@ export function useLessonContextMenu({ onOpen, onChanged }: Options) {
         id: "reschedule",
         label: t("lesson.rescheduleAction"),
         icon: <CalendarPlus className="h-4 w-4" />,
-        ...(isRecurring
-          ? {
-              children: [
-                {
-                  id: "rescheduleThis",
-                  label: t("lesson.rescheduleThis"),
-                  onSelect: () => useRescheduleLessonStore.getState().open(lesson, onChanged),
-                },
+        children: [
+          {
+            id: "rescheduleThis",
+            label: t("lesson.rescheduleThis"),
+            onSelect: () => useRescheduleLessonStore.getState().open(lesson, onChanged),
+          },
+          ...(isRecurring
+            ? [
                 {
                   id: "rescheduleSeries",
                   label: t("lesson.rescheduleSeries"),
                   onSelect: () => useRescheduleSeriesStore.getState().open(lesson, onChanged),
                 },
-              ],
-            }
-          : {
-              onSelect: () => useRescheduleLessonStore.getState().open(lesson, onChanged),
-            }),
+              ]
+            : []),
+        ],
       },
       {
         id: "delete",
         label: t("lesson.deleteAction"),
         icon: <Trash2 className="h-4 w-4" />,
         destructive: true,
-        ...(isRecurring
-          ? {
-              children: [
-                {
-                  id: "deleteThis",
-                  label: t("lesson.deleteThis"),
-                  destructive: true,
-                  onSelect: deleteInstanceAction(lesson),
-                },
+        children: [
+          {
+            id: "deleteThis",
+            label: t("lesson.deleteThis"),
+            destructive: true,
+            onSelect: deleteInstanceAction(lesson),
+          },
+          ...(isRecurring
+            ? [
                 {
                   id: "deleteSeries",
                   label: t("lesson.deleteSeries"),
                   destructive: true,
-                  onSelect: () => {
-                    if (window.confirm(t("lesson.deleteSeriesConfirm"))) {
-                      void run(() => deleteLessonSeries(lesson), t("lesson.seriesDeleted"));
-                    }
-                  },
+                  onSelect: deleteSeriesAction(lesson),
                 },
-              ],
-            }
-          : { onSelect: deleteInstanceAction(lesson) }),
+              ]
+            : []),
+        ],
       },
     ];
 

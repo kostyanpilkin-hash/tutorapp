@@ -168,6 +168,29 @@ pub fn run(conn: &Connection) -> Result<(), String> {
         [],
     );
 
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS lesson_archive (
+            id TEXT PRIMARY KEY,
+            action TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS archived_lessons (
+            archive_id TEXT NOT NULL,
+            id TEXT, student_name TEXT, subject TEXT, start_at TEXT, duration_minutes INTEGER,
+            cost REAL, currency TEXT, link TEXT, notes TEXT, status TEXT, payment_status TEXT,
+            recurrence_rule TEXT, recurrence_parent_id TEXT, recurrence_instance_date TEXT,
+            color TEXT, created_at TEXT, updated_at TEXT, materials TEXT, materials_link TEXT
+        );
+        CREATE TABLE IF NOT EXISTS archived_lesson_students (
+            archive_id TEXT NOT NULL,
+            lesson_id TEXT, student_id TEXT, cost REAL, currency TEXT, payment_status TEXT
+        );
+        CREATE TABLE IF NOT EXISTS archived_reminders (
+            archive_id TEXT NOT NULL,
+            id TEXT, lesson_id TEXT, minutes_before INTEGER
+        );",
+    );
+
     Ok(())
 }
 

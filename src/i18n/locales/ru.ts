@@ -61,7 +61,7 @@ const ru = {
     saveAnyway: "Сохранить всё равно",
     confirmDeleteLesson: "Удалить это занятие?",
     deleteSeries: "Удалить серию",
-    deleteSeriesConfirm: "Удалить всю серию повторяющихся занятий?",
+    deleteSeriesConfirm: "Удалить это и все последующие занятия серии? Прошлые занятия останутся.",
     seriesDeleted: "Серия удалена",
     recurrence: "Повторение",
     noRecurrence: "Не повторять",

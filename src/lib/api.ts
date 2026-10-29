@@ -58,6 +58,12 @@ export const api = {
 
   deleteLessonSeries: (id: string) => call(() => invoke<void>("delete_lesson_series", { id })),
 
+  deleteLessonSeriesFromInstance: (id: string, instanceDate: string) =>
+    call(() => invoke<string>("delete_lesson_series_from_instance", { id, instanceDate })),
+
+  restoreLessonArchive: (archiveId: string) =>
+    call(() => invoke<void>("restore_lesson_archive", { archiveId })),
+
   updateLessonStatus: (id: string, status: string, paymentStatus?: string) =>
     call(() =>
       invoke<Lesson>("update_lesson_status", {

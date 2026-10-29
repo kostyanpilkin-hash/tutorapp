@@ -93,9 +93,15 @@ export async function copyLessonLink(lesson: Lesson): Promise<boolean> {
   return true;
 }
 
-export async function deleteLessonSeries(lesson: Lesson): Promise<void> {
-  const parentId = lesson.recurrenceParentId || (lesson.id.includes("::") ? lesson.id.split("::")[0] : lesson.id);
-  await api.deleteLessonSeries(parentId);
+export async function deleteLessonSeries(lesson: Lesson): Promise<{ archiveId: string }> {
+  const parentId = parentLessonId(lesson);
+  const instanceDate = lesson.recurrenceInstanceDate || lesson.startAt;
+  const archiveId = await api.deleteLessonSeriesFromInstance(parentId, instanceDate);
+  return { archiveId };
+}
+
+export async function restoreLessonArchive(archiveId: string): Promise<void> {
+  await api.restoreLessonArchive(archiveId);
 }
 
 /**
