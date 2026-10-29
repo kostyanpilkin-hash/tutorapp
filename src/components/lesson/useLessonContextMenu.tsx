@@ -12,6 +12,7 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   copyLessonLink,
+  deleteLessonInstance,
   deleteLessonSeries,
   lessonPaymentStatus,
   openLessonLink,
@@ -22,6 +23,7 @@ import { useToastStore } from "@/stores/toastStore";
 import type { Lesson } from "@/types/lesson";
 import { useContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
 import { useRescheduleLessonStore } from "@/components/lesson/RescheduleLessonDialog";
+import { useRescheduleSeriesStore } from "@/components/lesson/RescheduleSeriesDialog";
 
 interface Options {
   onOpen: (lesson: Lesson) => void;
@@ -105,11 +107,43 @@ export function useLessonContextMenu({ onOpen, onChanged }: Options) {
         icon: <CalendarPlus className="h-4 w-4" />,
         onSelect: () => useRescheduleLessonStore.getState().open(lesson, onChanged),
       },
+      { id: "sep3", label: "", separator: true },
+      {
+        id: "deleteThis",
+        label: t("lesson.deleteThis"),
+        icon: <Trash2 className="h-4 w-4" />,
+        destructive: true,
+        onSelect: () => {
+          if (!window.confirm(t("lesson.confirmDeleteLesson"))) return;
+          void (async () => {
+            try {
+              const result = await deleteLessonInstance(lesson);
+              onChanged();
+              useToastStore.getState().info(t("lesson.deletedToast"), {
+                label: t("common.undo"),
+                onClick: () => {
+                  void result
+                    .undo()
+                    .then(() => onChanged())
+                    .catch(() => useToastStore.getState().error(t("lesson.undoFailed")));
+                },
+              });
+            } catch {
+              // api already toasts errors
+            }
+          })();
+        },
+      },
     ];
 
     if (isRecurring) {
       items.push(
-        { id: "sep3", label: "", separator: true },
+        {
+          id: "rescheduleSeries",
+          label: t("lesson.rescheduleSeries"),
+          icon: <CalendarPlus className="h-4 w-4" />,
+          onSelect: () => useRescheduleSeriesStore.getState().open(lesson, onChanged),
+        },
         {
           id: "deleteSeries",
           label: t("lesson.deleteSeries"),

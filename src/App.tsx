@@ -13,6 +13,7 @@ import type { CalendarView, Lesson } from "@/types/lesson";
 import { TodayWidget } from "@/components/TodayWidget";
 import { LessonFormDialog } from "@/components/lesson/LessonFormDialog";
 import { RescheduleLessonDialog } from "@/components/lesson/RescheduleLessonDialog";
+import { RescheduleSeriesDialog } from "@/components/lesson/RescheduleSeriesDialog";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import {
   WeekView,
@@ -347,6 +348,7 @@ export default function App() {
           }}
         />
         <RescheduleLessonDialog />
+        <RescheduleSeriesDialog />
         <ToastHost />
       </div>
     </ContextMenuProvider>

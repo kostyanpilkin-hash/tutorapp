@@ -187,6 +187,43 @@ function expandWeekly(
   return { items, usedExceptionIds };
 }
 
+/** Count occurrences of a weekly rule at or after fromDate (inclusive), honoring COUNT/UNTIL. */
+export function countWeeklyOccurrencesFrom(
+  rule: string,
+  anchorStart: Date,
+  fromDate: Date,
+): number {
+  const hours = anchorStart.getHours();
+  const minutes = anchorStart.getMinutes();
+  const until = parseUntil(rule);
+  const count = parseCount(rule);
+  const bydays = parseByday(rule);
+  const anchorWeekday = anchorStart.getDay();
+  const fromT = fromDate.getTime();
+
+  let emitted = 0;
+  let remaining = 0;
+  let cursor = startOfDay(anchorStart);
+  const hardLimit = addDays(anchorStart, 366 * 5);
+
+  while (cursor <= hardLimit) {
+    if (matchesWeekday(cursor, bydays, anchorWeekday)) {
+      const occurrence = new Date(cursor);
+      occurrence.setHours(hours, minutes, 0, 0);
+      if (occurrence.getTime() < anchorStart.getTime() - 1000) {
+        cursor = addDays(cursor, 1);
+        continue;
+      }
+      emitted += 1;
+      if (count != null && emitted > count) break;
+      if (until && occurrence.getTime() >= until.getTime()) break;
+      if (occurrence.getTime() >= fromT) remaining += 1;
+    }
+    cursor = addDays(cursor, 1);
+  }
+  return remaining;
+}
+
 export function expandLessons(lessons: Lesson[], from: Date, to: Date): Lesson[] {
   const result: Lesson[] = [];
   const usedExceptionIds = new Set<string>();

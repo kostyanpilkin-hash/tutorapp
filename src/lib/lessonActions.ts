@@ -1,6 +1,17 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { addDays, endOfDay } from "date-fns";
 import { api } from "@/lib/api";
-import { parentLessonId } from "@/lib/recurrence";
+import {
+  WEEKLY_RULE,
+  buildWeeklyRule,
+  countWeeklyOccurrencesFrom,
+  isRecurrenceInstance,
+  parentLessonId,
+  parseByday,
+  parseCount,
+  parseUntil,
+  withUntil,
+} from "@/lib/recurrence";
 import type { Lesson, LessonInput, LessonStatus, PaymentStatus } from "@/types/lesson";
 import { lessonToInput } from "@/types/lesson";
 
@@ -85,4 +96,94 @@ export async function copyLessonLink(lesson: Lesson): Promise<boolean> {
 export async function deleteLessonSeries(lesson: Lesson): Promise<void> {
   const parentId = lesson.recurrenceParentId || (lesson.id.includes("::") ? lesson.id.split("::")[0] : lesson.id);
   await api.deleteLessonSeries(parentId);
+}
+
+/**
+ * Deletes a single lesson. For recurring instances creates a cancelled
+ * exception so the slot stays suppressed. Returns an undo callback.
+ */
+export async function deleteLessonInstance(lesson: Lesson): Promise<{ undo: () => Promise<void> }> {
+  const snapshot = lessonToInput(lesson);
+  const parentId = parentLessonId(lesson);
+  const instanceDate = lesson.recurrenceInstanceDate || lesson.startAt;
+
+  if (lesson.recurrenceParentId && !lesson.id.includes("::")) {
+    await api.updateLesson(lesson.id, { ...snapshot, status: "cancelled" });
+    return { undo: () => api.updateLesson(lesson.id, snapshot).then(() => undefined) };
+  }
+
+  if (isRecurrenceInstance(lesson) || lesson.recurrenceRule) {
+    const created = await api.createLesson({
+      ...snapshot,
+      recurrenceRule: null,
+      recurrenceParentId: parentId,
+      recurrenceInstanceDate: instanceDate,
+      status: "cancelled",
+      startAt: instanceDate,
+    });
+    return { undo: () => api.deleteLesson(created.id) };
+  }
+
+  await api.deleteLesson(lesson.id);
+  return {
+    undo: () =>
+      api
+        .createLesson({
+          ...snapshot,
+          recurrenceRule: null,
+          recurrenceParentId: null,
+          recurrenceInstanceDate: null,
+        })
+        .then(() => undefined),
+  };
+}
+
+/**
+ * Moves a recurring series "this and future": truncates the old series
+ * before the clicked instance and creates a new series with the same
+ * weekdays at a new time-of-day. Past lessons keep their history.
+ */
+export async function rescheduleSeriesFromInstance(lesson: Lesson, time: string): Promise<void> {
+  const parentId = parentLessonId(lesson);
+  const instanceDate = lesson.recurrenceInstanceDate || lesson.startAt;
+  const parent = await api.getLesson(parentId);
+
+  const [hh, mm] = time.split(":").map(Number);
+  const slot = new Date(instanceDate);
+  const newStart = new Date(slot.getFullYear(), slot.getMonth(), slot.getDate(), hh, mm, 0, 0);
+  if (newStart.getTime() === slot.getTime()) return;
+
+  const oldRule = parent.recurrenceRule || WEEKLY_RULE;
+  const oldCount = parseCount(oldRule);
+  const remaining =
+    oldCount != null ? countWeeklyOccurrencesFrom(oldRule, new Date(parent.startAt), slot) : null;
+
+  if (oldCount != null && (remaining == null || remaining <= 0)) {
+    await rescheduleLesson(lesson, newStart);
+    return;
+  }
+
+  const bydays = parseByday(oldRule);
+  const newRule = buildWeeklyRule({
+    bydays: bydays.length > 0 ? bydays : [slot.getDay()],
+    count: remaining,
+    until: remaining == null ? parseUntil(oldRule) : null,
+  });
+
+  const input = lessonToInput(parent);
+  const created = await api.createLesson({
+    ...input,
+    startAt: newStart.toISOString(),
+    recurrenceRule: newRule,
+    recurrenceParentId: null,
+    recurrenceInstanceDate: null,
+  });
+
+  try {
+    const until = endOfDay(addDays(slot, -1));
+    await api.updateLesson(parentId, { ...input, recurrenceRule: withUntil(oldRule, until) });
+  } catch (e) {
+    await api.deleteLesson(created.id).catch(() => undefined);
+    throw e;
+  }
 }
