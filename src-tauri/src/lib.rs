@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod http_server;
 mod models;
 mod recurrence;
 mod scheduler;
@@ -72,10 +73,13 @@ pub fn run() {
             update_student_lessons_link,
             get_student_settings_log,
             get_activity_log,
+            http_server::get_phone_link,
+            http_server::set_phone_server,
             apply_prepaid_lessons,
             get_student_photo_data_url,
         ])
         .setup(|app| {
+            http_server::maybe_start();
             let open_item = MenuItem::with_id(app, "open", "Открыть", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &quit_item])?;

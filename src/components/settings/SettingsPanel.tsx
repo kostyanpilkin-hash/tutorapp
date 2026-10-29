@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { BookOpen } from "lucide-react";
+import QRCode from "qrcode";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { api } from "@/lib/api";
 import type { MessageTemplate } from "@/lib/messageTemplates";
@@ -68,12 +69,28 @@ export function SettingsPanel() {
   const [busy, setBusy] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  const [phoneLink, setPhoneLink] = useState<string | null>(null);
+  const [phoneQr, setPhoneQr] = useState("");
 
   useEffect(() => {
     void isEnabled().then(setAutostart);
     void api.getDbPath().then(setDbPath).catch(() => setDbPath(""));
     void loadMessageTemplates().then(setTemplates).catch(() => setTemplates([]));
+    void api.getPhoneLink().then(setPhoneLink).catch(() => setPhoneLink(null));
   }, []);
+
+  useEffect(() => {
+    if (!phoneLink) {
+      setPhoneQr("");
+      return;
+    }
+    void QRCode.toString(phoneLink, { type: "svg", margin: 1 }).then(setPhoneQr).catch(() => setPhoneQr(""));
+  }, [phoneLink]);
+
+  const togglePhone = async () => {
+    await api.setPhoneServer(!phoneLink);
+    await api.getPhoneLink().then(setPhoneLink).catch(() => setPhoneLink(null));
+  };
 
   useEffect(() => {
     setDurationDraft(String(defaultDuration));
@@ -352,6 +369,26 @@ export function SettingsPanel() {
               {t("settings.shortcut")}
             </Button>
           </div>
+        </div>
+
+        <div className="rounded-lg border border-border p-3 space-y-2">
+          <Label>{t("settings.phoneTitle")}</Label>
+          <p className="text-xs text-muted-foreground">{t("settings.phoneHint")}</p>
+          <Button variant="outline" onClick={() => void togglePhone()}>
+            {t("settings.phoneToggle")}: {phoneLink ? t("settings.on") : t("settings.off")}
+          </Button>
+          {phoneLink && (
+            <>
+              <p className="break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">{phoneLink}</p>
+              {phoneQr && (
+                <div
+                  className="inline-block rounded-lg bg-white p-2 [&>svg]:h-40 [&>svg]:w-40"
+                  dangerouslySetInnerHTML={{ __html: phoneQr }}
+                />
+              )}
+              <p className="text-xs text-muted-foreground">{t("settings.phoneFirewall")}</p>
+            </>
+          )}
         </div>
 
         <Button variant="outline" onClick={() => setHelpOpen(true)} className="w-full">

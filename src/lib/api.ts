@@ -167,6 +167,10 @@ export const api = {
   getActivityLog: (category?: string, limit?: number) =>
     call(() => invoke<ActivityLogEntry[]>("get_activity_log", { category, limit })),
 
+  getPhoneLink: () => call(() => invoke<string | null>("get_phone_link")),
+  setPhoneServer: (enabled: boolean) =>
+    call(() => invoke<void>("set_phone_server", { enabled })),
+
   getDebtLessons: () =>
     call(() => invoke<DebtEntry[]>("get_debt_lessons")),
 
