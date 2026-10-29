@@ -50,8 +50,40 @@ fn ensure_key(conn: &Connection) -> Result<String, String> {
 }
 
 fn local_ip() -> String {
-    // Connect a UDP socket to a public address to discover the LAN interface IP.
-    // No traffic is actually sent.
+    // Enumerate interfaces, skipping VPN/tunnel/virtual adapters, and prefer a
+    // real LAN IPv4 (192.168.x.x, 172.16-31.x.x, 10.x.x.x).
+    const TUNNEL_HINTS: &[&str] = &[
+        "vpn", "tun", "tap", "xray", "wireguard", "wg", "openvpn", "tailscale",
+        "wsl", "hyper-v", "virtualbox", "vmware", "loopback", "bluetooth",
+    ];
+    let mut lan: Vec<std::net::Ipv4Addr> = Vec::new();
+    if let Ok(ifs) = if_addrs::get_if_addrs() {
+        for i in ifs {
+            let name = i.name.to_lowercase();
+            if TUNNEL_HINTS.iter().any(|h| name.contains(h)) || i.ip().is_loopback() {
+                continue;
+            }
+            if let std::net::IpAddr::V4(v4) = i.ip() {
+                if v4.is_private() {
+                    lan.push(v4);
+                }
+            }
+        }
+    }
+    // Prefer 192.168.x.x (most home networks), then 172.16-31.x.x, then 10.x.x.x.
+    lan.sort_by_key(|a| {
+        let o = a.octets();
+        match o[0] {
+            192 => 0u8,
+            172 => 1,
+            10 => 2,
+            _ => 3,
+        }
+    });
+    if let Some(ip) = lan.first() {
+        return ip.to_string();
+    }
+    // Fallback: UDP socket trick to discover the route's local IP.
     if let Ok(sock) = std::net::UdpSocket::bind("0.0.0.0:0") {
         if sock.connect("8.8.8.8:80").is_ok() {
             if let Ok(addr) = sock.local_addr() {
