@@ -159,7 +159,7 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
           <div className="fixed inset-0 z-[120]" onMouseDown={close} onContextMenu={(e) => e.preventDefault()}>
             <div
               role="menu"
-              className="animate-pop absolute min-w-[200px] overflow-hidden rounded-xl border border-border bg-card p-1 shadow-xl"
+              className="animate-pop absolute min-w-[200px] rounded-xl border border-border bg-card p-1 shadow-xl"
               style={{ left: menu.x, top: menu.y }}
               onMouseDown={(e) => e.stopPropagation()}
             >
