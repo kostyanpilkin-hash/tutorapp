@@ -788,24 +788,12 @@ html.theme-cupertino ::selection { background: rgb(10 132 255 / 0.35); }
 html.theme-discord aside nav button {
   position: relative;
 }
-html.theme-discord aside nav button svg {
-  display: none;
-}
-html.theme-discord aside nav button::before {
-  content: "#";
-  margin-right: 0.5rem;
-  font-weight: 700;
-  color: #80848e;
-}
 html.theme-discord aside nav button:hover {
   background: #35373c;
   color: #f2f3f5;
 }
 html.theme-discord aside nav button.bg-primary {
   background: #404249;
-  color: #ffffff;
-}
-html.theme-discord aside nav button.bg-primary::before {
   color: #ffffff;
 }
 html.theme-discord aside nav button.bg-primary::after {
@@ -953,3 +941,29 @@ html.theme-mica aside {
   border-right-color: rgb(0 0 0 / 0.05) !important;
 }
 html.theme-mica ::selection { background: rgb(0 103 192 / 0.2); }
+
+/* ===== Купертино — жидкое стекло на вкладке «Сегодня» ===== */
+html.theme-cupertino body:has([data-page="home"]) {
+  background:
+    radial-gradient(1200px 800px at 15% -10%, rgb(10 132 255 / 0.16), transparent 60%),
+    radial-gradient(1000px 700px at 95% 20%, rgb(100 210 255 / 0.11), transparent 55%),
+    radial-gradient(900px 600px at 45% 105%, rgb(94 92 230 / 0.13), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+  animation: cupertino-liquid 38s ease-in-out infinite alternate;
+}
+
+@keyframes cupertino-liquid {
+  0% {
+    background-position: 0% 0%, 0% 0%, 0% 0%;
+  }
+  33% {
+    background-position: 14% 10%, -8% 14%, 6% -8%;
+  }
+  66% {
+    background-position: -10% 16%, 12% -10%, -12% 8%;
+  }
+  100% {
+    background-position: 8% -6%, -14% 8%, 10% 12%;
+  }
+}
