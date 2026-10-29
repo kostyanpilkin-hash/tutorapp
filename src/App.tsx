@@ -186,7 +186,7 @@ export default function App() {
   return (
     <ContextMenuProvider>
       <div className="flex min-h-screen text-foreground">
-        <aside className="flex w-56 flex-col border-r border-border/80 bg-card/85 p-4 backdrop-blur">
+        <aside className="flex w-56 flex-col border-r border-border/80 bg-[var(--sidebar-bg)] p-4 backdrop-blur">
           <h1 className="font-display mb-6 text-2xl font-semibold tracking-tight text-primary">{t("app.title")}</h1>
           <nav className="flex flex-col gap-1">
             <Button variant={page === "home" ? "default" : "ghost"} className="justify-start" onClick={goToToday}>
