@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Lesson, LessonInput, OverlapInfo, FinanceReport } from "@/types/lesson";
-import type { Student, StudentFinance, StudentInput, StudentSettingsLog, DebtEntry } from "@/types/student";
+import type { Student, StudentFinance, StudentInput, StudentSettingsLog, DebtEntry, ActivityLogEntry } from "@/types/student";
 import { useToastStore } from "@/stores/toastStore";
 
 export interface FiredReminderEntry {
@@ -163,6 +163,9 @@ export const api = {
 
   getStudentSettingsLog: (studentId?: string) =>
     call(() => invoke<StudentSettingsLog[]>("get_student_settings_log", { studentId })),
+
+  getActivityLog: (category?: string, limit?: number) =>
+    call(() => invoke<ActivityLogEntry[]>("get_activity_log", { category, limit })),
 
   getDebtLessons: () =>
     call(() => invoke<DebtEntry[]>("get_debt_lessons")),

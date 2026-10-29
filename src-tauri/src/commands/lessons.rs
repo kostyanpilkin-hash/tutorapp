@@ -502,6 +502,17 @@ pub fn create_lesson(
                 &input.payment_status,
             )?;
             insert_reminders(conn, &id, &input.reminders)?;
+            log_activity(
+                conn,
+                "lesson",
+                "created",
+                Some(&id),
+                Some(&student_name),
+                Some("start_at"),
+                None,
+                Some(&input.start_at),
+                input.recurrence_rule.as_deref(),
+            );
             Ok(())
         })();
         match result {
@@ -600,6 +611,17 @@ pub fn update_lesson(
             conn.execute("DELETE FROM reminders WHERE lesson_id = ?1", params![id])
                 .map_err(|e| e.to_string())?;
             insert_reminders(conn, &id, &input.reminders)?;
+            log_activity(
+                conn,
+                "lesson",
+                "updated",
+                Some(&id),
+                Some(&student_name),
+                Some("start_at"),
+                None,
+                Some(&input.start_at),
+                None,
+            );
             Ok(())
         })();
         match result {
@@ -618,11 +640,19 @@ pub fn update_lesson(
 #[tauri::command]
 pub fn delete_lesson(state: tauri::State<AppState>, id: String) -> Result<(), String> {
     state.pool.with_conn(|conn| {
+        let name: Option<String> = conn
+            .query_row(
+                "SELECT student_name FROM lessons WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .ok();
         conn.execute(
             "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
             params![id],
         )
         .map_err(|e| e.to_string())?;
+        log_activity(conn, "lesson", "deleted", Some(&id), name.as_deref(), None, None, None, None);
         Ok(())
     })
 }
@@ -681,6 +711,35 @@ pub fn delete_lesson_series(state: tauri::State<AppState>, id: String) -> Result
     })
 }
 const LESSON_COLS: &str = "id, student_name, subject, start_at, duration_minutes, cost, currency, link, notes, status, payment_status, recurrence_rule, recurrence_parent_id, recurrence_instance_date, color, created_at, updated_at, materials, materials_link";
+
+pub(crate) fn log_activity(
+    conn: &Connection,
+    category: &str,
+    action: &str,
+    entity_id: Option<&str>,
+    entity_name: Option<&str>,
+    field: Option<&str>,
+    old_value: Option<&str>,
+    new_value: Option<&str>,
+    details: Option<&str>,
+) {
+    let _ = conn.execute(
+        "INSERT INTO activity_log (id, category, action, entity_id, entity_name, field, old_value, new_value, details, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            category,
+            action,
+            entity_id,
+            entity_name,
+            field,
+            old_value,
+            new_value,
+            details,
+            Utc::now().to_rfc3339()
+        ],
+    );
+}
 
 fn archive_rows(
     conn: &Connection,
@@ -764,6 +823,24 @@ pub fn delete_lesson_series_from_instance(
             let mut ids = vec![parent_id.clone()];
             ids.extend(exception_ids.clone());
             let archive_id = archive_rows(conn, "series_delete_from_instance", &ids)?;
+            let pname: Option<String> = conn
+                .query_row(
+                    "SELECT student_name FROM lessons WHERE id = ?1",
+                    params![parent_id],
+                    |r| r.get(0),
+                )
+                .ok();
+            log_activity(
+                conn,
+                "lesson",
+                "series_deleted_from",
+                Some(&parent_id),
+                pname.as_deref(),
+                Some("start_at"),
+                None,
+                Some(&instance_date),
+                Some(&archive_id),
+            );
 
             // Truncate series: strip COUNT/UNTIL, set UNTIL = day before instance
             if let Some(rule) = rule {
@@ -866,6 +943,13 @@ pub fn update_lesson_status(
     state.pool.with_conn(|conn| {
         conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
+            let old: Option<(String, String, String)> = conn
+                .query_row(
+                    "SELECT student_name, status, payment_status FROM lessons WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .ok();
             if let Some(ps) = payment_status.clone() {
                 conn.execute(
                     "UPDATE lessons SET status = ?2, payment_status = ?3, updated_at = ?4 WHERE id = ?1",
@@ -877,6 +961,17 @@ pub fn update_lesson_status(
                     params![id, ps],
                 )
                 .map_err(|e| e.to_string())?;
+                log_activity(
+                    conn,
+                    "lesson",
+                    "payment_changed",
+                    Some(&id),
+                    old.as_ref().map(|o| o.0.as_str()),
+                    Some("payment_status"),
+                    old.as_ref().map(|o| o.2.as_str()),
+                    Some(&ps),
+                    None,
+                );
             } else {
                 conn.execute(
                     "UPDATE lessons SET status = ?2, updated_at = ?3 WHERE id = ?1",
@@ -884,6 +979,17 @@ pub fn update_lesson_status(
                 )
                 .map_err(|e| e.to_string())?;
             }
+            log_activity(
+                conn,
+                "lesson",
+                "status_changed",
+                Some(&id),
+                old.as_ref().map(|o| o.0.as_str()),
+                Some("status"),
+                old.as_ref().map(|o| o.1.as_str()),
+                Some(&status),
+                None,
+            );
             Ok(())
         })();
         match result {

@@ -131,6 +131,17 @@ pub fn create_student(
             ],
         )
         .map_err(|e| e.to_string())?;
+        super::lessons::log_activity(
+            conn,
+            "student",
+            "created",
+            Some(&id),
+            Some(&input.name),
+            None,
+            None,
+            None,
+            None,
+        );
         Ok(())
     })?;
     get_student(state, id)
@@ -185,6 +196,7 @@ pub fn update_student(
         )
         .map_err(|e| e.to_string())?;
 
+        let sname = input.name.clone();
         if old_currency != input.default_currency {
             let _ = conn.execute(
                 "INSERT INTO student_settings_log (id, student_id, field, old_value, new_value, changed_at)
@@ -197,18 +209,28 @@ pub fn update_student(
                     now,
                 ],
             );
+            super::lessons::log_activity(
+                conn, "student", "settings_changed", Some(&id), Some(&sname),
+                Some("default_currency"), old_currency.as_deref(), input.default_currency.as_deref(), None,
+            );
         }
         if old_cost != input.default_cost {
+            let oc = old_cost.map(|c| c.to_string());
+            let nc = input.default_cost.map(|c| c.to_string());
             let _ = conn.execute(
                 "INSERT INTO student_settings_log (id, student_id, field, old_value, new_value, changed_at)
                  VALUES (?1, ?2, 'default_cost', ?3, ?4, ?5)",
                 params![
                     Uuid::new_v4().to_string(),
                     id,
-                    old_cost.map(|c| c.to_string()),
-                    input.default_cost.map(|c| c.to_string()),
+                    oc,
+                    nc,
                     now,
                 ],
+            );
+            super::lessons::log_activity(
+                conn, "student", "settings_changed", Some(&id), Some(&sname),
+                Some("default_cost"), oc.as_deref(), nc.as_deref(), None,
             );
         }
         if old_link != input.default_link {
@@ -222,6 +244,10 @@ pub fn update_student(
                     input.default_link,
                     now,
                 ],
+            );
+            super::lessons::log_activity(
+                conn, "student", "settings_changed", Some(&id), Some(&sname),
+                Some("default_link"), old_link.as_deref(), input.default_link.as_deref(), None,
             );
         }
         Ok(())

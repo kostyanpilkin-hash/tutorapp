@@ -228,6 +228,21 @@ pub struct StudentSettingsLog {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ActivityLogEntry {
+    pub id: String,
+    pub category: String,
+    pub action: String,
+    pub entity_id: Option<String>,
+    pub entity_name: Option<String>,
+    pub field: Option<String>,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+    pub details: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DebtEntry {
     pub lesson_id: String,
     pub student_id: String,

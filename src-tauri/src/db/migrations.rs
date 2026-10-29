@@ -191,6 +191,49 @@ pub fn run(conn: &Connection) -> Result<(), String> {
         );",
     );
 
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS activity_log (
+            id TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            action TEXT NOT NULL,
+            entity_id TEXT,
+            entity_name TEXT,
+            field TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            details TEXT,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);",
+    );
+
+    migrate_activity_log(conn)?;
+
+    Ok(())
+}
+
+fn migrate_activity_log(conn: &Connection) -> Result<(), String> {
+    let migrated: String = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'activity_log_migrated'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or_else(|_| "0".to_string());
+    if migrated == "1" {
+        return Ok(());
+    }
+    let _ = conn.execute(
+        "INSERT INTO activity_log (id, category, action, entity_id, entity_name, field, old_value, new_value, details, created_at)
+         SELECT l.id, 'student', 'settings_changed', l.student_id, s.name, l.field, l.old_value, l.new_value, NULL, l.changed_at
+         FROM student_settings_log l LEFT JOIN students s ON s.id = l.student_id",
+        [],
+    );
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('activity_log_migrated', '1')",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 

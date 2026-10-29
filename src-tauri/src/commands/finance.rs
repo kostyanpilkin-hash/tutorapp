@@ -588,6 +588,24 @@ pub(crate) fn mark_debt_paid_conn(
                 params![lesson_id, payment_status, Utc::now().to_rfc3339()],
             )
             .map_err(|e| e.to_string())?;
+            let name: Option<String> = conn
+                .query_row(
+                    "SELECT s.name FROM students s WHERE s.id = ?1",
+                    params![student_id],
+                    |r| r.get(0),
+                )
+                .ok();
+            super::lessons::log_activity(
+                conn,
+                "finance",
+                "debt_paid",
+                Some(student_id),
+                name.as_deref(),
+                Some("payment_status"),
+                Some("unpaid"),
+                Some("paid"),
+                Some(lesson_id),
+            );
             Ok(())
         })();
 

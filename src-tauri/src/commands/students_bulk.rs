@@ -168,6 +168,46 @@ pub fn get_student_settings_log(
 }
 
 #[tauri::command]
+pub fn get_activity_log(
+    state: tauri::State<AppState>,
+    category: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<crate::models::ActivityLogEntry>, String> {
+    state.pool.with_conn(|conn| {
+        let lim = limit.unwrap_or(500);
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, category, action, entity_id, entity_name, field, old_value, new_value, details, created_at
+                 FROM activity_log
+                 WHERE (?1 IS NULL OR category = ?1)
+                 ORDER BY created_at DESC LIMIT ?2",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![category, lim], |row| {
+                Ok(crate::models::ActivityLogEntry {
+                    id: row.get(0)?,
+                    category: row.get(1)?,
+                    action: row.get(2)?,
+                    entity_id: row.get(3)?,
+                    entity_name: row.get(4)?,
+                    field: row.get(5)?,
+                    old_value: row.get(6)?,
+                    new_value: row.get(7)?,
+                    details: row.get(8)?,
+                    created_at: row.get(9)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    })
+}
+
+#[tauri::command]
 pub fn apply_prepaid_lessons(
     state: tauri::State<AppState>,
     student_id: String,
@@ -228,6 +268,22 @@ pub fn apply_prepaid_lessons(
             params![student_id, applied, Utc::now().to_rfc3339()],
         )
         .map_err(|e| e.to_string())?;
+        if applied > 0 {
+            let name: Option<String> = conn
+                .query_row("SELECT name FROM students WHERE id = ?1", params![student_id], |r| r.get(0))
+                .ok();
+            super::lessons::log_activity(
+                conn,
+                "finance",
+                "prepaid_applied",
+                Some(&student_id),
+                name.as_deref(),
+                Some("paid_lessons"),
+                None,
+                Some(&applied.to_string()),
+                None,
+            );
+        }
         Ok(())
     })
 }

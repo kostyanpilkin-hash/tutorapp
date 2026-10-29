@@ -14,7 +14,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { addDays, addMonths, addYears, format } from "date-fns";
 import { ru, enUS, be as beLocale } from "date-fns/locale";
 import type { FinancePeriod, FinanceReport } from "@/types/lesson";
-import type { StudentSettingsLog, Student, DebtEntry } from "@/types/student";
+import type { DebtEntry } from "@/types/student";
 import { api } from "@/lib/api";
 import { PaymentDetailsPanel } from "@/components/finance/PaymentDetailsPanel";
 import { Button } from "@/components/ui/button";
@@ -153,31 +153,16 @@ function DebtsList({
 export function FinancePanel() {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
-  const [tab, setTab] = useState<"report" | "debts" | "details" | "history">("report");
+  const [tab, setTab] = useState<"report" | "debts" | "details">("report");
   const [period, setPeriod] = useState<FinancePeriod>("month");
   const [anchor, setAnchor] = useState(new Date());
   const [customFrom, setCustomFrom] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [customTo, setCustomTo] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [report, setReport] = useState<FinanceReport | null>(null);
   const [loading, setLoading] = useState(false);
-  const [logs, setLogs] = useState<StudentSettingsLog[]>([]);
-  const [studentNames, setStudentNames] = useState<Map<string, string>>(new Map());
   const [debts, setDebts] = useState<DebtEntry[]>([]);
   const [payingDebt, setPayingDebt] = useState<string | null>(null);
   const showSuccess = useToastStore((state) => state.success);
-
-  const loadHistory = useCallback(async () => {
-    try {
-      const [logData, students] = await Promise.all([
-        api.getStudentSettingsLog(),
-        api.getStudents(true),
-      ]);
-      setLogs(logData);
-      setStudentNames(new Map(students.map((s: Student) => [s.id, s.name])));
-    } catch {
-      setLogs([]);
-    }
-  }, []);
 
   const loadDebts = useCallback(async () => {
     try {
@@ -188,9 +173,8 @@ export function FinancePanel() {
   }, []);
 
   useEffect(() => {
-    if (tab === "history") void loadHistory();
     if (tab === "debts") void loadDebts();
-  }, [tab, loadHistory, loadDebts]);
+  }, [tab, loadDebts]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -291,13 +275,6 @@ export function FinancePanel() {
           >
             {t("finance.tabs.details")}
           </Button>
-          <Button
-            size="sm"
-            variant={tab === "history" ? "default" : "ghost"}
-            onClick={() => setTab("history")}
-          >
-            {t("finance.tabs.history")}
-          </Button>
         </div>
       </div>
 
@@ -309,44 +286,6 @@ export function FinancePanel() {
           onMarkPaid={markDebtPaid}
           t={t}
         />
-      ) : tab === "history" ? (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <h3 className="mb-3 font-medium">{t("finance.historyTitle")}</h3>
-          {logs.length === 0 ? (
-            <div className="py-6 text-center">
-              <p className="font-display text-base font-semibold">{t("finance.historyEmpty")}</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="pb-2 pr-4">{t("finance.historyStudent")}</th>
-                    <th className="pb-2 pr-4">{t("finance.historyField")}</th>
-                    <th className="pb-2 pr-4">{t("finance.historyOld")}</th>
-                    <th className="pb-2 pr-4">{t("finance.historyNew")}</th>
-                    <th className="pb-2">{t("finance.historyDate")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((log) => (
-                    <tr key={log.id} className="border-b border-border/50">
-                      <td className="py-2 pr-4 font-medium">
-                        {studentNames.get(log.studentId) ?? log.studentId}
-                      </td>
-                      <td className="py-2 pr-4">{t(`finance.field.${log.field}`, log.field)}</td>
-                      <td className="py-2 pr-4">{log.oldValue ?? "—"}</td>
-                      <td className="py-2 pr-4">{log.newValue ?? "—"}</td>
-                      <td className="py-2 text-muted-foreground">
-                        {format(new Date(log.changedAt), "dd.MM.yyyy HH:mm")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       ) : tab === "details" ? (
         <PaymentDetailsPanel />
       ) : (

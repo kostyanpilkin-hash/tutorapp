@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { addDays, addMonths, format, subDays, subMonths } from "date-fns";
-import { Bell, Calendar, ChevronLeft, ChevronRight, Plus, Settings, Users, Wallet } from "lucide-react";
+import { Bell, Calendar, ChevronLeft, ChevronRight, History, Plus, Settings, Users, Wallet } from "lucide-react";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useLessonStore } from "@/stores/lessonStore";
 import { useToastStore } from "@/stores/toastStore";
@@ -24,6 +24,9 @@ import {
 const FinancePanel = lazy(() =>
   import("@/components/finance/FinancePanel").then((m) => ({ default: m.FinancePanel })),
 );
+const HistoryPanel = lazy(() =>
+  import("@/components/history/HistoryPanel").then((m) => ({ default: m.HistoryPanel })),
+);
 import { RemindersPanel } from "@/components/reminders/RemindersPanel";
 import { StudentsPanel } from "@/components/students/StudentsPanel";
 import { ToastHost } from "@/components/ui/ToastHost";
@@ -31,7 +34,7 @@ import { ContextMenuProvider } from "@/components/ui/context-menu";
 import { Button } from "@/components/ui/button";
 import i18n from "@/i18n";
 
-type Page = "home" | "calendar" | "students" | "reminders" | "finance" | "settings";
+type Page = "home" | "calendar" | "students" | "reminders" | "finance" | "history" | "settings";
 
 export default function App() {
   const { t } = useTranslation();
@@ -204,6 +207,9 @@ export default function App() {
             <Button variant={page === "finance" ? "default" : "ghost"} className="justify-start" onClick={() => setPage("finance")}>
               <Wallet className="mr-2 h-4 w-4" />{t("app.finance")}
             </Button>
+            <Button variant={page === "history" ? "default" : "ghost"} className="justify-start" onClick={() => setPage("history")}>
+              <History className="mr-2 h-4 w-4" />{t("app.history")}
+            </Button>
             <Button variant={page === "settings" ? "default" : "ghost"} className="justify-start" onClick={() => setPage("settings")}>
               <Settings className="mr-2 h-4 w-4" />{t("app.settings")}
             </Button>
@@ -293,6 +299,11 @@ export default function App() {
           )}
 
           {page === "reminders" && <RemindersPanel />}
+          {page === "history" && (
+            <Suspense fallback={null}>
+              <HistoryPanel />
+            </Suspense>
+          )}
 
           {page === "finance" && (
             <Suspense

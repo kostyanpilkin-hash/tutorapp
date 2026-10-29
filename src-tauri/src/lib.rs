@@ -71,6 +71,7 @@ pub fn run() {
             count_student_lessons_for_link_update,
             update_student_lessons_link,
             get_student_settings_log,
+            get_activity_log,
             apply_prepaid_lessons,
             get_student_photo_data_url,
         ])

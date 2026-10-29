@@ -76,6 +76,19 @@ export interface StudentFinance {
   expected: { currency: string; amount: number }[];
 }
 
+export interface ActivityLogEntry {
+  id: string;
+  category: string;
+  action: string;
+  entityId?: string;
+  entityName?: string;
+  field?: string;
+  oldValue?: string;
+  newValue?: string;
+  details?: string;
+  createdAt: string;
+}
+
 export interface StudentSettingsLog {
   id: string;
   studentId: string;
