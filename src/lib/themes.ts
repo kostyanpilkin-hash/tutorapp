@@ -19,6 +19,10 @@ export const THEMES: readonly ThemeMeta[] = [
   { id: "contrast", kind: "light" },
   { id: "lavender", kind: "light" },
   { id: "peach", kind: "light" },
+  { id: "mac", kind: "light" },
+  { id: "notion", kind: "light" },
+  { id: "material", kind: "light" },
+  { id: "mica", kind: "light" },
   { id: "dark", kind: "dark" },
   { id: "indigo", kind: "dark" },
   { id: "graphite", kind: "dark" },
@@ -26,6 +30,12 @@ export const THEMES: readonly ThemeMeta[] = [
   { id: "ember", kind: "dark" },
   { id: "pine", kind: "dark" },
   { id: "plum", kind: "dark" },
+  { id: "cupertino", kind: "dark" },
+  { id: "discord", kind: "dark" },
+  { id: "spotify", kind: "dark" },
+  { id: "github", kind: "dark" },
+  { id: "editor", kind: "dark" },
+  { id: "slack", kind: "dark" },
 ];
 
 export const THEME_IDS = THEMES.map((t) => t.id);

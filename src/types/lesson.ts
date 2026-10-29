@@ -20,7 +20,17 @@ export type Theme =
   | "midnight"
   | "ember"
   | "pine"
-  | "plum";
+  | "plum"
+  | "cupertino"
+  | "discord"
+  | "spotify"
+  | "github"
+  | "editor"
+  | "slack"
+  | "mac"
+  | "notion"
+  | "material"
+  | "mica";
 export type FinancePeriod = "day" | "week" | "month" | "year" | "custom";
 
 export interface Reminder {

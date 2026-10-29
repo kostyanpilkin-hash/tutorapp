@@ -365,6 +365,196 @@
   --destructive: #fb7185;
 }
 
+/* Купертино — тёмный минимализм в стиле macOS */
+.theme-cupertino {
+  --bg: #000000;
+  --fg: #f5f5f7;
+  --card: #1c1c1e;
+  --card-fg: #f5f5f7;
+  --primary: #0a84ff;
+  --primary-fg: #ffffff;
+  --secondary: #2c2c2e;
+  --secondary-fg: #f5f5f7;
+  --muted: #2c2c2e;
+  --muted-fg: #98989d;
+  --accent: #123a63;
+  --accent-fg: #7cc3ff;
+  --border: #38383a;
+  --ring: #0a84ff;
+  --destructive: #ff453a;
+}
+
+/* Дискорд — блюрпл на тёмно-сером */
+.theme-discord {
+  --bg: #313338;
+  --fg: #f2f3f5;
+  --card: #2b2d31;
+  --card-fg: #f2f3f5;
+  --primary: #5865f2;
+  --primary-fg: #ffffff;
+  --secondary: #383a40;
+  --secondary-fg: #dbdee1;
+  --muted: #383a40;
+  --muted-fg: #949ba4;
+  --accent: #383a40;
+  --accent-fg: #b5bac1;
+  --border: #1e1f22;
+  --ring: #5865f2;
+  --destructive: #f23f43;
+}
+
+/* Спотифай — зелёный на глубоком чёрном */
+.theme-spotify {
+  --bg: #121212;
+  --fg: #ffffff;
+  --card: #1e1e1e;
+  --card-fg: #ffffff;
+  --primary: #1db954;
+  --primary-fg: #121212;
+  --secondary: #2a2a2a;
+  --secondary-fg: #ffffff;
+  --muted: #2a2a2a;
+  --muted-fg: #a7a7a7;
+  --accent: #1a3d24;
+  --accent-fg: #4ade80;
+  --border: #2a2a2a;
+  --ring: #1db954;
+  --destructive: #f15e6c;
+}
+
+/* Гитхаб — холодный тёмный */
+.theme-github {
+  --bg: #0d1117;
+  --fg: #e6edf3;
+  --card: #161b22;
+  --card-fg: #e6edf3;
+  --primary: #1f6feb;
+  --primary-fg: #ffffff;
+  --secondary: #21262d;
+  --secondary-fg: #e6edf3;
+  --muted: #21262d;
+  --muted-fg: #8b949e;
+  --accent: #122d42;
+  --accent-fg: #79c0ff;
+  --border: #30363d;
+  --ring: #58a6ff;
+  --destructive: #f85149;
+}
+
+/* Редактор — в стиле VS Code */
+.theme-editor {
+  --bg: #1e1e1e;
+  --fg: #d4d4d4;
+  --card: #252526;
+  --card-fg: #d4d4d4;
+  --primary: #007acc;
+  --primary-fg: #ffffff;
+  --secondary: #2d2d30;
+  --secondary-fg: #d4d4d4;
+  --muted: #2d2d30;
+  --muted-fg: #858585;
+  --accent: #094771;
+  --accent-fg: #9cdcfe;
+  --border: #3c3c3c;
+  --ring: #007acc;
+  --destructive: #f14c4c;
+}
+
+/* Слэк — баклажан */
+.theme-slack {
+  --bg: #3f0e40;
+  --fg: #ffffff;
+  --card: #4a154b;
+  --card-fg: #ffffff;
+  --primary: #36c5f0;
+  --primary-fg: #121016;
+  --secondary: #522653;
+  --secondary-fg: #ffffff;
+  --muted: #522653;
+  --muted-fg: #cfc0d0;
+  --accent: #5a2a5e;
+  --accent-fg: #e8b8ff;
+  --border: #522653;
+  --ring: #36c5f0;
+  --destructive: #e01e5a;
+}
+
+/* Мак — светлый в стиле macOS */
+.theme-mac {
+  --bg: #f5f5f7;
+  --fg: #1d1d1f;
+  --card: #ffffff;
+  --card-fg: #1d1d1f;
+  --primary: #007aff;
+  --primary-fg: #ffffff;
+  --secondary: #e8e8ed;
+  --secondary-fg: #1d1d1f;
+  --muted: #e8e8ed;
+  --muted-fg: #6e6e73;
+  --accent: #e6f0ff;
+  --accent-fg: #0060df;
+  --border: #d2d2d7;
+  --ring: #007aff;
+  --destructive: #ff3b30;
+}
+
+/* Ноушн — тёплая бумага */
+.theme-notion {
+  --bg: #f7f6f3;
+  --fg: #37352f;
+  --card: #ffffff;
+  --card-fg: #37352f;
+  --primary: #e16259;
+  --primary-fg: #ffffff;
+  --secondary: #efefed;
+  --secondary-fg: #37352f;
+  --muted: #efefed;
+  --muted-fg: #787774;
+  --accent: #faeceb;
+  --accent-fg: #c4554d;
+  --border: #e3e2de;
+  --ring: #e16259;
+  --destructive: #eb5757;
+}
+
+/* Материал — чистый белый с синим акцентом */
+.theme-material {
+  --bg: #ffffff;
+  --fg: #202124;
+  --card: #f8f9fa;
+  --card-fg: #202124;
+  --primary: #1a73e8;
+  --primary-fg: #ffffff;
+  --secondary: #f1f3f4;
+  --secondary-fg: #202124;
+  --muted: #f1f3f4;
+  --muted-fg: #5f6368;
+  --accent: #e8f0fe;
+  --accent-fg: #1a73e8;
+  --border: #dadce0;
+  --ring: #1a73e8;
+  --destructive: #d93025;
+}
+
+/* Мика — светло-серый в стиле Windows 11 */
+.theme-mica {
+  --bg: #f3f3f3;
+  --fg: #1b1b1b;
+  --card: #ffffff;
+  --card-fg: #1b1b1b;
+  --primary: #0067c0;
+  --primary-fg: #ffffff;
+  --secondary: #e5e5e5;
+  --secondary-fg: #1b1b1b;
+  --muted: #eaeaea;
+  --muted-fg: #605e5c;
+  --accent: #dbe9f6;
+  --accent-fg: #005a9e;
+  --border: #e0e0e0;
+  --ring: #0067c0;
+  --destructive: #c42b1c;
+}
+
 * {
   box-sizing: border-box;
 }
