@@ -6,7 +6,7 @@ export const Root = () => {
     <Composition
       id="Promo"
       component={Promo}
-      durationInFrames={1050}
+      durationInFrames={1200}
       fps={30}
       width={1920}
       height={1080}
