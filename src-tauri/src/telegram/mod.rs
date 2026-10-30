@@ -147,8 +147,9 @@ pub async fn start_bot() {
         Ok(c) => c,
         Err(_) => return,
     };
-    if bot_and_chat(&conn).is_none() { return }
-    let token = setting(&conn, "tg_token").unwrap();
+    // The poll loop must run even before the owner links (pairing happens
+    // via /start + code), so only the token is required here.
+    let Some(token) = setting(&conn, "tg_token") else { return };
     let bot = api::Bot::new(&token);
     let t = lang(&conn);
     let _ = bot
