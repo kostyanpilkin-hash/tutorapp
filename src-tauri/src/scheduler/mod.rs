@@ -1,6 +1,5 @@
 use crate::db::AppState;
 use crate::commands::reminders::{clear_reminder_snooze, reminder_snooze_until};
-use crate::recurrence::{expand_weekly_starts, is_weekly};
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::params;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,16 +15,6 @@ struct ReminderPayload {
     subject: String,
     start_at: String,
     link: Option<String>,
-    minutes_before: i64,
-}
-
-struct LessonReminderRow {
-    id: String,
-    student_name: String,
-    subject: String,
-    start_at: DateTime<Utc>,
-    link: Option<String>,
-    recurrence_rule: Option<String>,
     minutes_before: i64,
 }
 
@@ -138,157 +127,48 @@ fn check_reminders(app: &AppHandle, state: &AppState) -> Result<(), String> {
     let lookback = now - Duration::hours(1);
 
     state.pool.with_conn(|conn| {
+        // Single source of truth: occurrences::collect expands series,
+        // resolves exceptions and drops cancelled slots — same as the UI,
+        // the bot and the phone page. `row_id` is the lesson_id the
+        // reminder/snooze keys are stored under.
+        let tz = crate::occurrences::timezone(conn);
+        let occs = crate::occurrences::collect(
+            conn,
+            tz,
+            lookback.with_timezone(&tz).date_naive(),
+            horizon.with_timezone(&tz).date_naive(),
+        )?;
+
         let mut stmt = conn
-            .prepare(
-                "SELECT l.id, l.student_name, l.subject, l.start_at, l.link, l.recurrence_rule, r.minutes_before
-                 FROM lessons l
-                 JOIN reminders r ON r.lesson_id = l.id
-                 WHERE l.status = 'scheduled'
-                   AND (l.recurrence_parent_id IS NULL OR l.recurrence_parent_id = '')",
-            )
+            .prepare("SELECT minutes_before FROM reminders WHERE lesson_id = ?1")
             .map_err(|e| e.to_string())?;
 
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                    row.get::<_, i64>(6)?,
-                ))
-            })
-            .map_err(|e| e.to_string())?;
-
-        let mut lessons = Vec::new();
-        for row in rows {
-            let (id, student_name, subject, start_at, link, recurrence_rule, minutes_before) =
-                row.map_err(|e| e.to_string())?;
-            let start: DateTime<Utc> = start_at
-                .parse::<DateTime<Utc>>()
-                .map_err(|e: chrono::ParseError| e.to_string())?;
-            lessons.push(LessonReminderRow {
-                id,
-                student_name,
-                subject,
-                start_at: start,
-                link,
-                recurrence_rule,
-                minutes_before,
-            });
-        }
-
-        // Exception instance starts keyed by parent id: (instance_ts, status)
-        let mut exceptions: std::collections::HashMap<String, Vec<(i64, String)>> =
-            std::collections::HashMap::new();
-        {
-            let mut estmt = conn
-                .prepare(
-                    "SELECT recurrence_parent_id, recurrence_instance_date, status
-                     FROM lessons
-                     WHERE recurrence_parent_id IS NOT NULL AND recurrence_parent_id != ''
-                       AND recurrence_instance_date IS NOT NULL",
-                )
-                .map_err(|e| e.to_string())?;
-            let erows = estmt
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                    ))
-                })
-                .map_err(|e| e.to_string())?;
-            for row in erows {
-                let (parent_id, instance_date, status) = row.map_err(|e| e.to_string())?;
-                if let Ok(dt) = instance_date.parse::<DateTime<Utc>>() {
-                    exceptions
-                        .entry(parent_id)
-                        .or_default()
-                        .push((dt.timestamp(), status));
-                }
+        for occ in occs {
+            if occ.status != "scheduled" {
+                continue;
             }
-        }
-
-        for lesson in lessons {
-            let starts = if is_weekly(&lesson.recurrence_rule) {
-                expand_weekly_starts(lesson.start_at, &lesson.recurrence_rule, lookback, horizon)
-            } else if lesson.start_at >= lookback && lesson.start_at <= horizon {
-                vec![lesson.start_at]
-            } else {
-                vec![]
-            };
-
-            for instance_start in starts {
-                if let Some(list) = exceptions.get(&lesson.id) {
-                    if list
-                        .iter()
-                        .any(|(ts, _)| *ts == instance_start.timestamp())
-                    {
-                        // Any exception for this slot replaces the series instance.
-                        continue;
-                    }
-                }
+            if occ.start_utc < lookback || occ.start_utc > horizon {
+                continue;
+            }
+            let minutes: Vec<i64> = stmt
+                .query_map(params![&occ.row_id], |r| r.get(0))
+                .map_err(|e| e.to_string())?
+                .filter_map(|r| r.ok())
+                .collect();
+            for mb in minutes {
                 fire_reminder(
                     app,
                     conn,
-                    &lesson.id,
-                    &lesson.student_name,
-                    &lesson.subject,
-                    instance_start,
-                    &lesson.link,
-                    lesson.minutes_before,
+                    &occ.row_id,
+                    &occ.name,
+                    &occ.subject,
+                    occ.start_utc,
+                    &occ.link,
+                    mb,
                     now,
                 )?;
             }
         }
-
-        // Fire only for scheduled exception lessons (their own start_at).
-        let mut estmt = conn
-            .prepare(
-                "SELECT l.id, l.student_name, l.subject, l.start_at, l.link, r.minutes_before
-                 FROM lessons l
-                 JOIN reminders r ON r.lesson_id = l.id
-                 WHERE l.status = 'scheduled'
-                   AND l.recurrence_parent_id IS NOT NULL AND l.recurrence_parent_id != ''",
-            )
-            .map_err(|e| e.to_string())?;
-        let erows = estmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, i64>(5)?,
-                ))
-            })
-            .map_err(|e| e.to_string())?;
-        for row in erows {
-            let (id, student_name, subject, start_at, link, minutes_before) =
-                row.map_err(|e| e.to_string())?;
-            let start: DateTime<Utc> = start_at
-                .parse::<DateTime<Utc>>()
-                .map_err(|e: chrono::ParseError| e.to_string())?;
-            if start < lookback || start > horizon {
-                continue;
-            }
-            fire_reminder(
-                app,
-                conn,
-                &id,
-                &student_name,
-                &subject,
-                start,
-                &link,
-                minutes_before,
-                now,
-            )?;
-        }
-
         Ok(())
     })
 }

@@ -1179,132 +1179,54 @@ pub(crate) fn find_overlaps(
     duration_minutes: i64,
     exclude_id: Option<&str>,
 ) -> Result<Vec<OverlapInfo>, String> {
-    use crate::recurrence::{expand_weekly_starts, intervals_overlap, is_weekly};
+    use crate::recurrence::intervals_overlap;
 
     let end = start + Duration::minutes(duration_minutes);
     let range_from = start - Duration::days(1);
     let range_to = end + Duration::days(8);
 
-    {
-        // Include cancelled *exceptions* so deleted series slots stay in the skip list.
-        // (Deleting a recurring instance creates status=cancelled with recurrence_parent_id.)
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, student_name, start_at, duration_minutes, recurrence_rule, recurrence_parent_id, recurrence_instance_date, status
-                 FROM lessons
-                 WHERE status != 'cancelled'
-                    OR (recurrence_parent_id IS NOT NULL AND recurrence_parent_id != '')",
-            )
-            .map_err(|e| e.to_string())?;
+    // `parent::ISO` excludes a single series slot; a bare id excludes that row
+    // (a parent id excludes the whole series, matching the old behaviour).
+    let exclude_row = exclude_id.filter(|ex| !ex.contains("::"));
+    let exclude_slot = exclude_id
+        .and_then(|ex| ex.split_once("::"))
+        .map(|(pid, inst)| (pid.to_string(), inst.parse::<DateTime<Utc>>().ok()));
 
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, i64>(3)?,
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                    row.get::<_, Option<String>>(6)?,
-                    row.get::<_, String>(7)?,
-                ))
-            })
-            .map_err(|e| e.to_string())?;
+    let tz = crate::occurrences::timezone(conn);
+    let occs = crate::occurrences::collect(
+        conn,
+        tz,
+        range_from.with_timezone(&tz).date_naive(),
+        range_to.with_timezone(&tz).date_naive(),
+    )?;
 
-        let mut overlaps = Vec::new();
-        let mut exceptions: std::collections::HashMap<String, Vec<DateTime<Utc>>> =
-            std::collections::HashMap::new();
-        let mut parents = Vec::new();
-        let mut regular = Vec::new();
-
-        let (exclude_series_id, exclude_instance_at) = exclude_id
-            .and_then(|ex| ex.split_once("::"))
-            .map(|(pid, inst)| (Some(pid.to_string()), inst.parse::<DateTime<Utc>>().ok()))
-            .unwrap_or((None, None));
-
-        for row in rows {
-            let (id, student_name, other_start, other_dur, recurrence_rule, parent_id, instance_date, status) =
-                row.map_err(|e| e.to_string())?;
-
-            let excluded = Some(id.as_str()) == exclude_id;
-            let is_cancelled = status == "cancelled";
-
-            let other_start: DateTime<Utc> = other_start
-                .parse::<DateTime<Utc>>()
-                .map_err(|e: chrono::ParseError| e.to_string())?;
-
-            if let Some(pid) = parent_id {
-                if let Some(ref inst) = instance_date {
-                    if let Ok(dt) = inst.parse::<DateTime<Utc>>() {
-                        exceptions.entry(pid).or_default().push(dt);
-                    }
-                }
-                // Cancelled exceptions only suppress the series slot; they are not an overlap.
-                if excluded || is_cancelled {
-                    continue;
-                }
-                let other_end = other_start + Duration::minutes(other_dur);
-                if intervals_overlap(start, end, other_start, other_end) {
-                    overlaps.push(OverlapInfo {
-                        id,
-                        student_name,
-                        start_at: other_start.to_rfc3339(),
-                        duration_minutes: other_dur,
-                    });
-                }
+    let mut overlaps = Vec::new();
+    for occ in occs {
+        if occ.status == "cancelled" || occ.start_utc < range_from || occ.start_utc > range_to {
+            continue;
+        }
+        if exclude_row == Some(occ.row_id.as_str()) {
+            continue;
+        }
+        if let Some((pid, inst)) = &exclude_slot {
+            if &occ.row_id == pid && inst == &Some(occ.start_utc) {
                 continue;
             }
-
-            if excluded || is_cancelled {
-                continue;
-            }
-
-            if is_weekly(&recurrence_rule) {
-                parents.push((id, student_name, other_start, other_dur, recurrence_rule));
-            } else {
-                regular.push((id, student_name, other_start, other_dur));
-            }
         }
-
-        for (id, student_name, other_start, other_dur) in regular {
-            let other_end = other_start + Duration::minutes(other_dur);
-            if intervals_overlap(start, end, other_start, other_end) {
-                overlaps.push(OverlapInfo {
-                    id,
-                    student_name,
-                    start_at: other_start.to_rfc3339(),
-                    duration_minutes: other_dur,
-                });
-            }
+        let other_end = occ.start_utc + Duration::minutes(occ.duration_minutes);
+        if intervals_overlap(start, end, occ.start_utc, other_end) {
+            overlaps.push(OverlapInfo {
+                id: match &occ.instance_iso {
+                    Some(iso) => format!("{}::{}", occ.row_id, iso),
+                    None => occ.id.clone(),
+                },
+                student_name: occ.name.clone(),
+                start_at: occ.start_utc.to_rfc3339(),
+                duration_minutes: occ.duration_minutes,
+            });
         }
-
-        for (id, student_name, anchor, other_dur, rule) in parents {
-            let starts = expand_weekly_starts(anchor, &rule, range_from, range_to);
-            let skipped = exceptions.get(&id).cloned().unwrap_or_default();
-            for instance_start in starts {
-                if skipped.contains(&instance_start) {
-                    continue;
-                }
-                if exclude_series_id.as_ref() == Some(&id)
-                    && exclude_instance_at == Some(instance_start)
-                {
-                    continue;
-                }
-                let instance_end = instance_start + Duration::minutes(other_dur);
-                if intervals_overlap(start, end, instance_start, instance_end) {
-                    overlaps.push(OverlapInfo {
-                        id: format!("{id}::{}", instance_start.to_rfc3339()),
-                        student_name: student_name.clone(),
-                        start_at: instance_start.to_rfc3339(),
-                        duration_minutes: other_dur,
-                    });
-                }
-            }
-        }
-
-        Ok(overlaps)
     }
+    Ok(overlaps)
 }
 
 pub(crate) fn setting_timezone(conn: &rusqlite::Connection) -> String {
@@ -1704,6 +1626,82 @@ mod tests {
             "2026-03-10T10:00:00Z".parse().unwrap(),
             60,
             Some("l1"),
+        )
+        .unwrap();
+        assert!(overlaps.is_empty());
+    }
+
+    #[test]
+    fn find_overlaps_detects_series_instance() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        let overlaps = find_overlaps(
+            &conn,
+            "2026-03-16T10:15:00Z".parse().unwrap(),
+            60,
+            None,
+        )
+        .unwrap();
+        assert_eq!(overlaps.len(), 1);
+        assert_eq!(overlaps[0].id, "p1::2026-03-16T10:00:00.000Z");
+    }
+
+    #[test]
+    fn find_overlaps_excludes_instance_and_slot() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        // Excluding the Mar 16 slot via `parent::ISO` removes only that instance.
+        let overlaps = find_overlaps(
+            &conn,
+            "2026-03-16T10:15:00Z".parse().unwrap(),
+            60,
+            Some("p1::2026-03-16T10:00:00.000Z"),
+        )
+        .unwrap();
+        assert!(overlaps.is_empty());
+        // Another slot of the same series still overlaps.
+        let overlaps = find_overlaps(
+            &conn,
+            "2026-03-23T10:15:00Z".parse().unwrap(),
+            60,
+            Some("p1::2026-03-16T10:00:00.000Z"),
+        )
+        .unwrap();
+        assert_eq!(overlaps.len(), 1);
+        // A cancelled exception suppresses its slot — no overlap there.
+        insert_lesson_ex(
+            &conn,
+            "e1",
+            "Ivan",
+            "2026-03-23T10:00:00Z",
+            "cancelled",
+            None,
+            Some("p1"),
+            Some("2026-03-23T10:00:00.000Z"),
+        );
+        let overlaps = find_overlaps(
+            &conn,
+            "2026-03-23T10:15:00Z".parse().unwrap(),
+            60,
+            None,
         )
         .unwrap();
         assert!(overlaps.is_empty());
