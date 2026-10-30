@@ -239,6 +239,8 @@ const en = {
     tgFieldsTitle: "Bot message fields",
     tgFieldsHint: "Name and time are always shown",
     tgOffsetsTitle: "Bot reminders before",
+    tgDigest: "Morning digest",
+    tgQuiet: "Quiet hours",
     tgField: {
       student: "Student",
       time: "Time",

@@ -2,7 +2,7 @@
 
 use super::api::Bot;
 use super::handlers::{actions_markup, day_message, field_flags, offsets, reply_keyboard, reminder_text};
-use super::{is_running, lang, open_db, owner_chat, quiet_now, sent_mark};
+use super::{is_running, lang, open_db, owner_chat, quiet_now, sent_mark, setting};
 use crate::occurrences;
 use chrono::{Duration, Timelike, Utc};
 
@@ -47,19 +47,29 @@ async fn tick(bot: &Bot) -> Result<(), String> {
         }
     }
 
-    // ---------- morning digest at 09:00 (quiet hours apply) ----------
+    // ---------- morning digest (tg_digest_time "HH:MM", "" = off; quiet hours apply) ----------
     let local = now.with_timezone(&tz);
-    if local.hour() == 9 && local.minute() < 30 && !quiet_now(tz) {
-        let key = format!("digest:{}", local.date_naive().format("%Y%m%d"));
-        if sent_mark(&conn, &key)? {
-            let today = local.date_naive();
-            let occs = occurrences::collect(&conn, tz, today, today)?;
-            let msg = if occs.is_empty() {
-                t.free_day().to_string()
-            } else {
-                day_message(&t, today, &occs, tz, &fields, t.morning_digest())
-            };
-            let _ = bot.send(chat, &msg, Some(reply_keyboard(&t)), true).await;
+    let digest_cfg = setting(&conn, "tg_digest_time").unwrap_or_else(|| "09:00".into());
+    let digest_start = digest_cfg
+        .split_once(':')
+        .and_then(|(h, m)| h.parse::<i64>().ok().zip(m.parse::<i64>().ok()))
+        .map(|(h, m)| h * 60 + m);
+    if let Some(start) = digest_start {
+        // Minutes elapsed since the configured time — a 30-min window that
+        // also wraps correctly across midnight.
+        let elapsed = ((local.hour() as i64 * 60 + local.minute() as i64) - start).rem_euclid(1440);
+        if elapsed < 30 && !quiet_now(&conn, tz) {
+            let key = format!("digest:{}:{}", local.date_naive().format("%Y%m%d"), digest_cfg);
+            if sent_mark(&conn, &key)? {
+                let today = local.date_naive();
+                let occs = occurrences::collect(&conn, tz, today, today)?;
+                let msg = if occs.is_empty() {
+                    t.free_day().to_string()
+                } else {
+                    day_message(&t, today, &occs, tz, &fields, t.morning_digest())
+                };
+                let _ = bot.send(chat, &msg, Some(reply_keyboard(&t)), true).await;
+            }
         }
     }
     Ok(())

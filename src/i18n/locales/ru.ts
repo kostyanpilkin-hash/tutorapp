@@ -239,6 +239,8 @@ const ru = {
     tgFieldsTitle: "Поля сообщения бота",
     tgFieldsHint: "Имя и время показываются всегда",
     tgOffsetsTitle: "Напоминания бота за",
+    tgDigest: "Утренний дайджест",
+    tgQuiet: "Тихие часы",
     tgField: {
       student: "Ученик",
       time: "Время",

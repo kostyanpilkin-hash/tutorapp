@@ -44,9 +44,21 @@ pub fn lang(conn: &Connection) -> texts::T {
     texts::T(texts::lang(&setting(conn, "language").unwrap_or_else(|| "ru".into())))
 }
 
-fn quiet_now(tz: chrono_tz::Tz) -> bool {
+/// Quiet hours from settings `tg_quiet_from`/`tg_quiet_to` (hours, defaults
+/// 23→7). Handles both overnight (23→7) and same-day (13→15) intervals;
+/// equal bounds mean quiet hours are off.
+fn quiet_now(conn: &Connection, tz: chrono_tz::Tz) -> bool {
     let h = Utc::now().with_timezone(&tz).time().hour();
-    h >= 23 || h < 7
+    let from: u32 = setting(conn, "tg_quiet_from").and_then(|v| v.parse().ok()).unwrap_or(23);
+    let to: u32 = setting(conn, "tg_quiet_to").and_then(|v| v.parse().ok()).unwrap_or(7);
+    if from == to {
+        return false;
+    }
+    if from < to {
+        h >= from && h < to
+    } else {
+        h >= from || h < to
+    }
 }
 
 // ---------- Tauri commands ----------
@@ -147,6 +159,9 @@ pub fn tg_preferences(state: tauri::State<AppState>) -> Result<serde_json::Value
         Ok(serde_json::json!({
             "offsets": handlers::offsets(conn),
             "fields": handlers::field_flags(conn),
+            "digest_time": setting(conn, "tg_digest_time").unwrap_or_else(|| "09:00".into()),
+            "quiet_from": setting(conn, "tg_quiet_from").unwrap_or_else(|| "23".into()),
+            "quiet_to": setting(conn, "tg_quiet_to").unwrap_or_else(|| "7".into()),
         }))
     })
 }

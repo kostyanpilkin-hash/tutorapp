@@ -175,7 +175,13 @@ export function SettingsPanel() {
     queryKey: keys.tg.prefs(),
     queryFn: () => api.tgPreferences(),
   });
-  const tgPrefs = tgPrefsQuery.data ?? { offsets: [60], fields: ["student", "time", "link", "subject"] };
+  const tgPrefs = tgPrefsQuery.data ?? {
+    offsets: [60],
+    fields: ["student", "time", "link", "subject"],
+    digest_time: "09:00",
+    quiet_from: "23",
+    quiet_to: "7",
+  };
   const [tgCode, setTgCode] = useState("");
   const [tgUsername, setTgUsername] = useState("");
   const [tgBusy, setTgBusy] = useState(false);
@@ -259,6 +265,10 @@ export function SettingsPanel() {
     void saveTgFields(on ? [...tgPrefs.fields, f] : tgPrefs.fields.filter((x) => x !== f));
   const toggleTgOffset = (m: number, on: boolean) =>
     void saveTgOffsets(on ? [...tgPrefs.offsets, m] : tgPrefs.offsets.filter((x) => x !== m));
+  const saveTgPref = async (key: string, value: string) => {
+    await api.setSetting(key, value);
+    await reloadTg();
+  };
 
   useEffect(() => {
     setDurationDraft(String(defaultDuration));
@@ -620,6 +630,44 @@ export function SettingsPanel() {
         )}
         {tgError && <p className="text-xs text-red-500">{tgError}</p>}
         <div className="border-t border-border pt-2.5 space-y-1.5">
+          <div className="flex items-center justify-between py-0.5">
+            <span className="text-sm">{t("settings.tgDigest")}</span>
+            <div className="flex items-center gap-2">
+              <Input
+                type="time"
+                className="w-24"
+                value={tgPrefs.digest_time || "09:00"}
+                disabled={tgPrefs.digest_time === ""}
+                onChange={(e) => void saveTgPref("tg_digest_time", e.target.value)}
+              />
+              <Switch
+                checked={tgPrefs.digest_time !== ""}
+                onCheckedChange={(v) => void saveTgPref("tg_digest_time", v ? "09:00" : "")}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between py-0.5">
+            <span className="text-sm">{t("settings.tgQuiet")}</span>
+            <div className="flex items-center gap-1.5">
+              <Select value={tgPrefs.quiet_from} onValueChange={(v) => void saveTgPref("tg_quiet_from", v)}>
+                <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <SelectItem key={h} value={String(h)}>{String(h).padStart(2, "0")}:00</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground">–</span>
+              <Select value={tgPrefs.quiet_to} onValueChange={(v) => void saveTgPref("tg_quiet_to", v)}>
+                <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <SelectItem key={h} value={String(h)}>{String(h).padStart(2, "0")}:00</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div>
             <Label className="text-xs">{t("settings.tgFieldsTitle")}</Label>
             <p className="text-xs text-muted-foreground">{t("settings.tgFieldsHint")}</p>

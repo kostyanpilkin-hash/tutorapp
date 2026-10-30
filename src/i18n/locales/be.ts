@@ -239,6 +239,8 @@ const be = {
     tgFieldsTitle: "Палі паведамлення бота",
     tgFieldsHint: "Імя і час паказваюцца заўсёды",
     tgOffsetsTitle: "Нагадванні бота за",
+    tgDigest: "Ранішняя зводка",
+    tgQuiet: "Ціхія гадзіны",
     tgField: {
       student: "Вучань",
       time: "Час",
