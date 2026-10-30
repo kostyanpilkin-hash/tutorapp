@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Lesson, LessonInput, OverlapInfo, FinanceReport } from "@/types/lesson";
 import type { Student, StudentFinance, StudentInput, StudentSettingsLog, DebtEntry, ActivityLogEntry } from "@/types/student";
 import { useToastStore } from "@/stores/toastStore";
+import { queryClient } from "@/lib/queryClient";
+import { keys } from "@/lib/queryKeys";
 
 export interface FiredReminderEntry {
   lessonId: string;
@@ -92,8 +94,10 @@ export const api = {
 
   getSettings: () => call(() => invoke<Record<string, string>>("get_settings")),
 
-  setSetting: (key: string, value: string) =>
-    call(() => invoke<void>("set_setting", { key, value })),
+  setSetting: async (key: string, value: string) => {
+    await call(() => invoke<void>("set_setting", { key, value }));
+    await queryClient.invalidateQueries({ queryKey: keys.settings() });
+  },
 
   snoozeReminder: (
     lessonId: string,

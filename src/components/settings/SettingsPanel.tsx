@@ -3,9 +3,11 @@ import { useTranslation } from "react-i18next";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { BookOpen } from "lucide-react";
 import QRCode from "qrcode";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { api } from "@/lib/api";
+import { keys } from "@/lib/queryKeys";
 import type { MessageTemplate } from "@/lib/messageTemplates";
 import { loadMessageTemplates, saveMessageTemplates } from "@/lib/messageTemplates";
 import { useToastStore } from "@/stores/toastStore";
@@ -72,8 +74,8 @@ export function SettingsPanel() {
   const toast = useToastStore(
     useShallow((s) => ({ error: s.error, info: s.info, success: s.success })),
   );
+  const queryClient = useQueryClient();
   const [autostart, setAutostart] = useState(false);
-  const [dbPath, setDbPath] = useState("");
   const [durationDraft, setDurationDraft] = useState(String(defaultDuration));
   const [reminder1, setReminder1] = useState(String(defaultReminders[0] ?? 15));
   const [reminder2, setReminder2] = useState(
@@ -86,30 +88,44 @@ export function SettingsPanel() {
   const [busy, setBusy] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [phoneLinks, setPhoneLinks] = useState<string[]>([]);
+  const phoneQuery = useQuery({
+    queryKey: keys.phone.links(),
+    queryFn: () => api.getPhoneLinks(),
+  });
+  const phoneLinks = phoneQuery.data ?? [];
   const [phoneIdx, setPhoneIdx] = useState(0);
   const phoneLink = phoneLinks[phoneIdx] ?? phoneLinks[0] ?? null;
   const [phoneQr, setPhoneQr] = useState("");
-  const reloadPhone = () =>
-    api.getPhoneLinks().then((l) => { setPhoneLinks(l); setPhoneIdx(0); }).catch(() => setPhoneLinks([]));
+  const reloadPhone = () => queryClient.invalidateQueries({ queryKey: ["phone"] });
 
   const [tgToken, setTgToken] = useState("");
-  const [tgState, setTgState] = useState<{ tokenSet: boolean; linked: boolean; chatId: number | null } | null>(null);
+  const tgQuery = useQuery({
+    queryKey: keys.tg.status(),
+    queryFn: () => api.tgStatus(),
+    refetchInterval: 4000,
+  });
+  const tgState = tgQuery.data ?? null;
   const [tgCode, setTgCode] = useState("");
   const [tgUsername, setTgUsername] = useState("");
   const [tgBusy, setTgBusy] = useState(false);
   const [tgError, setTgError] = useState("");
-  const reloadTg = () => api.tgStatus().then(setTgState).catch(() => setTgState(null));
+  const reloadTg = () => queryClient.invalidateQueries({ queryKey: ["tg"] });
+
+  const dbPathQuery = useQuery({
+    queryKey: keys.meta.dbPath(),
+    queryFn: () => api.getDbPath(),
+    staleTime: Infinity,
+  });
+  const dbPath = dbPathQuery.data ?? "";
 
   useEffect(() => {
     void isEnabled().then(setAutostart);
-    void api.getDbPath().then(setDbPath).catch(() => setDbPath(""));
     void loadMessageTemplates().then(setTemplates).catch(() => setTemplates([]));
-    void reloadPhone();
-    void reloadTg();
-    const poll = setInterval(() => void reloadTg(), 4000);
-    return () => clearInterval(poll);
   }, []);
+
+  useEffect(() => {
+    setPhoneIdx(0);
+  }, [phoneQuery.data]);
 
   useEffect(() => {
     if (!phoneLink) {

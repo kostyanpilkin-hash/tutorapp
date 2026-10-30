@@ -26,6 +26,15 @@ export const keys = {
     fired: () => ["reminders", "fired"] as const,
   },
   settings: () => ["settings"] as const,
+  phone: {
+    links: () => ["phone", "links"] as const,
+  },
+  tg: {
+    status: () => ["tg", "status"] as const,
+  },
+  meta: {
+    dbPath: () => ["meta", "dbPath"] as const,
+  },
 };
 
 /** Префиксы, которые покрывают все пользовательские данные приложения. */
