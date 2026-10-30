@@ -6,9 +6,9 @@
 
 `commands/lessons.rs` (команды + тесты, ~Nстрок) + подмодули `commands/lessons/`: `repo.rs` (SQL+row_to_lesson+loaders), `archive.rs` (archive/restore/dedupe + delete_series_from_instance), `overlaps.rs`, `activity_log.rs` (log_activity). Внешние пути сохранены ре-экспортами — потребители не тронуты.
 
-## 2. Виртуализация длинных списков
+## 2. Виртуализация длинных списков — ✅ выполнено (2026-10-30)
 
-HistoryPanel (до Nзаписей), список долгов, история ученика. `@tanstack/react-virtual` или `react-window`. Проверка: визуально + npm test.
+`@tanstack/react-virtual@3.14`: HistoryPanel (карточки, measureElement для раскрытия) и DebtsList (таблица, spacer-`<tr>`, scroll-область `max-h-[70vh]` + sticky thead). История ученика уже инкрементальна (HISTORY_STEP) — не тронута.
 
 ## 3. React Query (по компоненту за раз)
 

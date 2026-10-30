@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Calendar,
   History,
@@ -70,6 +71,15 @@ export function HistoryPanel() {
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [openId, setOpenId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 72,
+    overscan: 6,
+    getItemKey: (index) => entries[index].id,
+  });
 
   const fmtValue = (v: string | undefined, field?: string): string => {
     if (!v) return "—";
@@ -128,7 +138,7 @@ export function HistoryPanel() {
   };
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-auto p-1">
+    <div className="flex h-full flex-col gap-4 p-1">
       <div className="flex items-center justify-between">
         <h2 className="font-display flex items-center gap-2 text-2xl font-semibold">
           <History className="h-6 w-6 text-primary" />
@@ -153,21 +163,27 @@ export function HistoryPanel() {
         ))}
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
         {entries.length === 0 && (
           <div className="animate-fade-up rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
             {t("history.empty")}
           </div>
         )}
-        {entries.map((e) => {
+        <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
+          {virtualizer.getVirtualItems().map((vi) => {
+          const e = entries[vi.index];
           const Icon = ACTION_ICONS[e.action] || Calendar;
           const colors = CATEGORY_COLORS[e.category] || CATEGORY_COLORS.settings;
           const opened = openId === e.id;
           return (
             <div
-              key={e.id}
-              className="animate-fade-up rounded-xl border border-border bg-card p-3"
+              key={vi.key}
+              data-index={vi.index}
+              ref={virtualizer.measureElement}
+              className="absolute left-0 top-0 w-full pb-2"
+              style={{ transform: `translateY(${vi.start}px)` }}
             >
+            <div className="animate-fade-up rounded-xl border border-border bg-card p-3">
               <button
                 className="flex w-full items-center gap-3 text-left"
                 onClick={() => setOpenId(opened ? null : e.id)}
@@ -209,12 +225,14 @@ export function HistoryPanel() {
                 </div>
               )}
             </div>
+            </div>
           );
-        })}
+          })}
+        </div>
         {hasMore && (
           <button
             onClick={() => void load(entries.length)}
-            className="mx-auto mt-2 rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="mx-auto mt-2 block rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
           >
             {t("history.loadMore")}
           </button>

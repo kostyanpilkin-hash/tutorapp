@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Bar,
   BarChart,
@@ -77,6 +78,20 @@ function DebtsList({
   onMarkPaid: (debt: DebtEntry) => void;
   t: ReturnType<typeof useTranslation>["t"];
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: debts.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 37,
+    overscan: 10,
+    getItemKey: (index) => `${debts[index].lessonId}-${debts[index].studentId}`,
+  });
+  const virtualItems = virtualizer.getVirtualItems();
+  const padTop = virtualItems.length ? virtualItems[0].start : 0;
+  const padBottom = virtualItems.length
+    ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
+    : 0;
+
   const totals = new Map<string, number>();
   for (const d of debts) {
     totals.set(d.currency, (totals.get(d.currency) ?? 0) + d.cost);
@@ -105,9 +120,9 @@ function DebtsList({
           <p className="font-display text-base font-semibold">{t("finance.debtsEmpty")}</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div ref={scrollRef} className="max-h-[70vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-card">
               <tr className="border-b border-border text-left text-muted-foreground">
                 <th className="pb-2 pr-4">{t("finance.debtsDate")}</th>
                 <th className="pb-2 pr-4">{t("finance.historyStudent")}</th>
@@ -118,8 +133,20 @@ function DebtsList({
               </tr>
             </thead>
             <tbody>
-              {debts.map((d) => (
-                <tr key={`${d.lessonId}-${d.studentId}`} className="border-b border-border/50">
+              {padTop > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={6} style={{ height: padTop, padding: 0, border: 0 }} />
+                </tr>
+              )}
+              {virtualItems.map((vi) => {
+                const d = debts[vi.index];
+                return (
+                <tr
+                  key={vi.key}
+                  data-index={vi.index}
+                  ref={virtualizer.measureElement}
+                  className="border-b border-border/50"
+                >
                   <td className="py-2 pr-4 text-muted-foreground">
                     {format(new Date(d.startAt), "dd.MM.yyyy HH:mm")}
                   </td>
@@ -141,7 +168,13 @@ function DebtsList({
                     </Button>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
+              {padBottom > 0 && (
+                <tr aria-hidden="true">
+                  <td colSpan={6} style={{ height: padBottom, padding: 0, border: 0 }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
