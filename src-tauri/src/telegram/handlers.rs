@@ -342,7 +342,7 @@ fn evening_summary(t: &T, occs: &[Occ], _tz: chrono_tz::Tz, fields: &[String]) -
     let done = occs.iter().filter(|o| o.status == "completed").count();
     let noshow = occs.iter().filter(|o| o.status == "no_show").count();
     let cancelled = occs.iter().filter(|o| o.status == "cancelled").count();
-    let unpaid: Vec<&Occ> = occs.iter().filter(|o| o.status == "completed" && o.payment_status == "unpaid").collect();
+    let unpaid: Vec<&Occ> = occs.iter().filter(|o| (o.status == "completed" || o.status == "no_show") && o.payment_status == "unpaid" && o.cost > 0.0).collect();
     let mut s = format!("<b>{}</b>\n", t.evening_digest());
     s.push_str(&format!("{} {} ✅ · {} ❌ · {} 🚫\n", t.summary_label(), done, noshow, cancelled));
     if !unpaid.is_empty() {
@@ -355,15 +355,23 @@ fn evening_summary(t: &T, occs: &[Occ], _tz: chrono_tz::Tz, fields: &[String]) -
 }
 
 fn debts_message(t: &T, conn: &Connection) -> Result<String, String> {
+    // Same logic as Finance → debts: completed or no-show, effective payment
+    // status not 'paid', effective cost > 0; grouped per student and currency.
     let mut stmt = conn
         .prepare(
-            "SELECT student_name, COUNT(*), SUM(cost), currency FROM lessons
-             WHERE status = 'completed' AND payment_status = 'unpaid'
-             GROUP BY student_name, currency ORDER BY student_name",
+            "SELECT s.name, COUNT(*), SUM(COALESCE(ls.cost, l.cost)) AS total,
+                    COALESCE(NULLIF(ls.currency,''), NULLIF(l.currency,''), 'USD') AS currency
+             FROM lessons l
+             INNER JOIN lesson_students ls ON ls.lesson_id = l.id
+             INNER JOIN students s ON s.id = ls.student_id
+             WHERE l.status IN ('completed','no_show')
+               AND COALESCE(NULLIF(ls.payment_status,''), l.payment_status) != 'paid'
+               AND COALESCE(ls.cost, l.cost) > 0
+             GROUP BY s.name, currency ORDER BY s.name",
         )
         .map_err(|e| e.to_string())?;
     let rows: Vec<(String, i64, f64, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, Option<String>>(3)?.unwrap_or_default())))
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
         .collect();
