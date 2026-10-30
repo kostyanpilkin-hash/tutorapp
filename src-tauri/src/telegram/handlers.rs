@@ -55,33 +55,29 @@ fn field_label(t: &T, f: &str) -> &'static str {
     }
 }
 
-fn offset_label(min: i64) -> String {
-    match min {
-        1440 => "1 д / 1d".into(),
-        m if m >= 60 => format!("{} ч / {}h", m / 60, m / 60),
-        m => format!("{m} мин / {m}m"),
-    }
-}
-
 pub fn settings_markup(t: &T, offsets: &[i64], fields: &[String]) -> Value {
+    let toggle = |on: bool, label: String| format!("{} {label}", if on { "✅" } else { "⬜" });
     let mut rows: Vec<Value> = Vec::new();
     rows.push(json!([{ "text": t.notify_offsets(), "callback_data": "noop" }]));
     let mut row = Vec::new();
     for m in OFFSET_CHOICES {
-        let on = offsets.contains(&m);
-        row.push(json!({ "text": format!("{}{}", if on { "✔ " } else { "" }, offset_label(m)), "callback_data": format!(r#"{{"a":"o","v":{m}}}"#) }));
+        row.push(json!({
+            "text": toggle(offsets.contains(&m), t.offset_label(m)),
+            "callback_data": format!(r#"{{"a":"o","v":{m}}}"#),
+        }));
     }
     rows.push(json!(row));
     rows.push(json!([{ "text": t.msg_fields(), "callback_data": "noop" }]));
     for chunk in FIELD_CHOICES.chunks(4) {
         let mut row = Vec::new();
         for f in chunk {
-            let on = fields.iter().any(|x| x == f);
-            row.push(json!({ "text": format!("{}{}", if on { "✔ " } else { "" }, field_label(t, f)), "callback_data": format!(r#"{{"a":"f","v":"{f}"}}"#) }));
+            row.push(json!({
+                "text": toggle(fields.iter().any(|x| x == f), field_label(t, f).to_string()),
+                "callback_data": format!(r#"{{"a":"f","v":"{f}"}}"#),
+            }));
         }
         rows.push(json!(row));
     }
-    rows.push(json!([{ "text": t.back(), "callback_data": r#"{"a":"m"}"# }]));
     json!({ "inline_keyboard": rows })
 }
 
@@ -469,7 +465,8 @@ async fn handle_message(bot: &Bot, m: Message) -> Result<(), String> {
         }
         "settings" => {
             let offs = offsets(&conn);
-            bot.send(chat_id, t.settings(), Some(settings_markup(&t, &offs, &fields)), true).await?;
+            let text = format!("<b>{}</b>\n<i>{}</i>", t.settings(), t.settings_hint());
+            bot.send(chat_id, &text, Some(settings_markup(&t, &offs, &fields)), true).await?;
         }
         _ => {
             if normalized.starts_with('/') {

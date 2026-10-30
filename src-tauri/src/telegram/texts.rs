@@ -117,6 +117,27 @@ impl T {
     pub fn field_cost(&self) -> &'static str { self.s("Цена", "Cost", "Кошт") }
     pub fn notify_offsets(&self) -> &'static str { self.s("Напоминания за:", "Remind before:", "Нагадванні за:") }
     pub fn msg_fields(&self) -> &'static str { self.s("Поля сообщения:", "Message fields:", "Палі паведамлення:") }
+    pub fn settings_hint(&self) -> &'static str { self.s("Коснитесь пункта, чтобы переключить.", "Tap an item to toggle it.", "Націсніце на пункт, каб пераключыць.") }
+    /// Localized reminder-offset caption: "15 мин" / "1 h" / "1 дзень".
+    pub fn offset_label(&self, m: i64) -> String {
+        match m {
+            1440 => match self.0 {
+                L::Ru => "1 день".to_string(),
+                L::En => "1 day".to_string(),
+                L::Be => "1 дзень".to_string(),
+            },
+            m if m >= 60 => match self.0 {
+                L::Ru => format!("{} ч", m / 60),
+                L::En => format!("{} h", m / 60),
+                L::Be => format!("{} г", m / 60),
+            },
+            _ => match self.0 {
+                L::Ru => format!("{m} мин"),
+                L::En => format!("{m} min"),
+                L::Be => format!("{m} хв"),
+            },
+        }
+    }
     pub fn summary_label(&self) -> &'static str { self.s("Итог дня:", "Day summary:", "Вынік дня:") }
     pub fn unpaid_label(&self) -> &'static str { self.s("Не оплачено:", "Unpaid:", "Не аплачана:") }
     pub fn link_text(&self) -> &'static str { self.s("Ссылка", "Link", "Спасылка") }
