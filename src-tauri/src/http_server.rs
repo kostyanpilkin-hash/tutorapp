@@ -5,15 +5,15 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc, Weekday};
+use chrono::{Duration, NaiveDate, Utc};
 use rusqlite::{params, Connection};
-use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::db::{self, AppState};
+use crate::occurrences::{self, Occ};
 
 pub const PHONE_PORT: u16 = 45321;
 static SHUTDOWN: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
@@ -101,12 +101,6 @@ fn local_ips() -> Vec<String> {
 
 fn local_ip() -> String {
     local_ips().into_iter().next().unwrap_or_else(|| "localhost".to_string())
-}
-
-fn phone_timezone(conn: &Connection) -> chrono_tz::Tz {
-    setting(conn, "timezone")
-        .and_then(|v| v.parse::<chrono_tz::Tz>().ok())
-        .unwrap_or(chrono_tz::Tz::Europe__Moscow)
 }
 
 // ---------- Tauri commands ----------
@@ -228,31 +222,6 @@ async fn index() -> Html<&'static str> {
     Html(PAGE)
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Occ {
-    id: String,
-    name: String,
-    start: String,
-    duration_minutes: i64,
-    status: String,
-    payment_status: String,
-    color: Option<String>,
-}
-
-struct Raw {
-    id: String,
-    name: String,
-    start: String,
-    dur: i64,
-    status: String,
-    pay: String,
-    color: Option<String>,
-    rule: Option<String>,
-    parent: Option<String>,
-    idate: Option<String>,
-}
-
 async fn lessons(
     State(s): State<SrvState>,
     Query(q): Query<HashMap<String, String>>,
@@ -261,8 +230,7 @@ async fn lessons(
         return Err(StatusCode::UNAUTHORIZED);
     }
     let conn = open_db().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let tz = phone_timezone(&conn);
-
+    let tz = occurrences::timezone(&conn);
     let today = Utc::now().with_timezone(&tz).date_naive();
     let from = q
         .get("from")
@@ -272,191 +240,9 @@ async fn lessons(
         .get("to")
         .and_then(|v| NaiveDate::parse_from_str(v, "%Y-%m-%d").ok())
         .unwrap_or(from + Duration::days(7));
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, student_name, start_at, duration_minutes, status, payment_status, color, recurrence_rule, recurrence_parent_id, recurrence_instance_date FROM lessons",
-        )
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let rows: Vec<Raw> = stmt
-        .query_map([], |r| {
-            Ok(Raw {
-                id: r.get(0)?,
-                name: r.get(1)?,
-                start: r.get(2)?,
-                dur: r.get(3)?,
-                status: r.get::<_, Option<String>>(4)?.unwrap_or_else(|| "scheduled".into()),
-                pay: r.get::<_, Option<String>>(5)?.unwrap_or_default(),
-                color: r.get(6)?,
-                rule: r.get(7)?,
-                parent: r.get(8)?,
-                idate: r.get(9)?,
-            })
-        })
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    let mut out: Vec<Occ> = Vec::new();
-
-    // Exceptions keyed by their local instance date.
-    let mut exceptions: HashMap<String, Vec<(NaiveDate, &Raw)>> = HashMap::new();
-    for r in &rows {
-        if let (Some(pid), Some(idate)) = (&r.parent, &r.idate) {
-            if let Some(d) = parse_any_date(idate, tz) {
-                exceptions.entry(pid.clone()).or_default().push((d, r));
-            }
-        }
-    }
-
-    let emitted_exceptions: HashSet<String> = HashSet::new();
-
-    for r in &rows {
-        if r.parent.is_some() {
-            // Exception row: emit as a regular lesson unless cancelled.
-            if r.status != "cancelled" {
-                if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
-                    let d = dt.with_timezone(&tz).date_naive();
-                    if d >= from && d <= to {
-                        out.push(mk_occ(r, r.id.clone(), dt));
-                    }
-                }
-            }
-            continue;
-        }
-
-        if let Some(rule) = &r.rule {
-            // Recurring parent: expand.
-            if let Some((mut bydays, interval, until, count)) = parse_rule(rule) {
-                if let Ok(start_utc) = r.start.parse::<DateTime<Utc>>() {
-                    let anchor = start_utc.with_timezone(&tz);
-                    let anchor_date = anchor.date_naive();
-                    let time = anchor.time();
-                    if bydays.is_empty() {
-                        bydays = vec![anchor_date.weekday()];
-                    }
-                    let monday = anchor_date
-                        - Duration::days(anchor_date.weekday().num_days_from_monday() as i64);
-                    let last = until.map(|u| u.min(to)).unwrap_or(to);
-                    let exs: HashSet<NaiveDate> = exceptions
-                        .get(&r.id)
-                        .map(|v| v.iter().map(|(d, _)| *d).collect())
-                        .unwrap_or_default();
-
-                    // COUNT limits the number of generated occurrences from the
-                    // anchor regardless of the requested window.
-                    let mut emitted_total = 0i64;
-                    let mut week = monday;
-                    while week <= last && count.map(|c| emitted_total < c).unwrap_or(true) {
-                        for wd in &bydays {
-                            let d = week
-                                + Duration::days(wd.num_days_from_monday() as i64);
-                            if d < anchor_date || d > last {
-                                continue;
-                            }
-                            emitted_total += 1;
-                            if count.map(|c| emitted_total > c).unwrap_or(false) {
-                                break;
-                            }
-                            if exs.contains(&d) || d < from || d > to {
-                                continue;
-                            }
-                            if let Some(local_dt) = tz
-                                .from_local_datetime(&d.and_time(time))
-                                .single()
-                            {
-                                let utc = local_dt.with_timezone(&Utc);
-                                out.push(mk_occ(
-                                    r,
-                                    format!("{}@{}", r.id, d.format("%Y%m%d")),
-                                    utc,
-                                ));
-                            }
-                        }
-                        week += Duration::weeks(interval.max(1));
-                    }
-                }
-            }
-        } else if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
-            let d = dt.with_timezone(&tz).date_naive();
-            if d >= from && d <= to {
-                out.push(mk_occ(r, r.id.clone(), dt));
-            }
-        }
-    }
-    let _ = emitted_exceptions;
-
-    // Dedupe by occurrence id (`<row id>` or `<series id>@<date>`), so two
-    // genuinely different lessons at the same time are both kept.
-    let mut seen: HashSet<String> = HashSet::new();
-    out.retain(|o| seen.insert(o.id.clone()));
-    out.sort_by(|a, b| a.start.cmp(&b.start));
-    Ok(Json(out))
-}
-
-fn mk_occ(r: &Raw, id: String, utc: DateTime<Utc>) -> Occ {
-    Occ {
-        id,
-        name: r.name.clone(),
-        start: utc.to_rfc3339(),
-        duration_minutes: r.dur,
-        status: r.status.clone(),
-        payment_status: r.pay.clone(),
-        color: r.color.clone(),
-    }
-}
-
-fn parse_any_date(s: &str, tz: chrono_tz::Tz) -> Option<NaiveDate> {
-    if let Ok(dt) = s.parse::<DateTime<Utc>>() {
-        return Some(dt.with_timezone(&tz).date_naive());
-    }
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
-}
-
-fn parse_rule(rule: &str) -> Option<(Vec<Weekday>, i64, Option<NaiveDate>, Option<i64>)> {
-    let mut freq = String::new();
-    let mut bydays: Vec<Weekday> = Vec::new();
-    let mut interval: i64 = 1;
-    let mut until: Option<NaiveDate> = None;
-    let mut count: Option<i64> = None;
-    for part in rule.split(';') {
-        let mut kv = part.splitn(2, '=');
-        let (k, v) = (kv.next()?, kv.next()?);
-        match k {
-            "FREQ" => freq = v.to_string(),
-            "BYDAY" => {
-                for d in v.split(',') {
-                    let wd = match d {
-                        "MO" => Weekday::Mon,
-                        "TU" => Weekday::Tue,
-                        "WE" => Weekday::Wed,
-                        "TH" => Weekday::Thu,
-                        "FR" => Weekday::Fri,
-                        "SA" => Weekday::Sat,
-                        "SU" => Weekday::Sun,
-                        _ => continue,
-                    };
-                    bydays.push(wd);
-                }
-            }
-            "INTERVAL" => interval = v.parse().unwrap_or(1),
-            "COUNT" => count = v.parse().ok(),
-            "UNTIL" => {
-                // Accept "YYYY-MM-DD", "YYYYMMDD" and full datetimes like
-                // "2026-10-16T07:00:00.000Z" (first 10 chars).
-                until = v
-                    .get(..10)
-                    .and_then(|p| NaiveDate::parse_from_str(p, "%Y-%m-%d").ok())
-                    .or_else(|| NaiveDate::parse_from_str(v, "%Y%m%d").ok());
-            }
-            _ => {}
-        }
-    }
-    if freq != "WEEKLY" {
-        return None;
-    }
-    bydays.sort_by_key(|w| w.num_days_from_monday());
-    Some((bydays, interval, until, count))
+    occurrences::collect(&conn, tz, from, to)
+        .map(Json)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 // ---------- Phone page ----------

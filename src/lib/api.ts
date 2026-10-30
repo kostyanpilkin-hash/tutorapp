@@ -169,6 +169,15 @@ export const api = {
 
   getPhoneLink: () => call(() => invoke<string | null>("get_phone_link")),
   getPhoneLinks: () => call(() => invoke<string[]>("get_phone_links")),
+
+  tgStatus: () =>
+    call(() =>
+      invoke<{ tokenSet: boolean; linked: boolean; chatId: number | null; pairingCode: string | null }>("tg_status"),
+    ),
+  tgConnect: (token: string) =>
+    call(() => invoke<{ username: string; code: string }>("tg_connect", { token })),
+  tgDisconnect: () => call(() => invoke<void>("tg_disconnect")),
+  tgTest: () => call(() => invoke<void>("tg_test")),
   resetPhoneKey: () => call(() => invoke<void>("reset_phone_key")),
   setPhoneServer: (enabled: boolean) =>
     call(() => invoke<void>("set_phone_server", { enabled })),

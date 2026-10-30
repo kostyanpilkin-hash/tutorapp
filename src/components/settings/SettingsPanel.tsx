@@ -76,11 +76,22 @@ export function SettingsPanel() {
   const reloadPhone = () =>
     api.getPhoneLinks().then((l) => { setPhoneLinks(l); setPhoneIdx(0); }).catch(() => setPhoneLinks([]));
 
+  const [tgToken, setTgToken] = useState("");
+  const [tgState, setTgState] = useState<{ tokenSet: boolean; linked: boolean; chatId: number | null } | null>(null);
+  const [tgCode, setTgCode] = useState("");
+  const [tgUsername, setTgUsername] = useState("");
+  const [tgBusy, setTgBusy] = useState(false);
+  const [tgError, setTgError] = useState("");
+  const reloadTg = () => api.tgStatus().then(setTgState).catch(() => setTgState(null));
+
   useEffect(() => {
     void isEnabled().then(setAutostart);
     void api.getDbPath().then(setDbPath).catch(() => setDbPath(""));
     void loadMessageTemplates().then(setTemplates).catch(() => setTemplates([]));
     void reloadPhone();
+    void reloadTg();
+    const poll = setInterval(() => void reloadTg(), 4000);
+    return () => clearInterval(poll);
   }, []);
 
   useEffect(() => {
@@ -99,6 +110,35 @@ export function SettingsPanel() {
     if (!window.confirm(t("settings.phoneResetConfirm"))) return;
     await api.resetPhoneKey();
     await reloadPhone();
+  };
+
+  const tgConnect = async () => {
+    if (!tgToken.trim()) return;
+    setTgBusy(true); setTgError("");
+    try {
+      const r = await api.tgConnect(tgToken.trim());
+      setTgUsername(r.username);
+      setTgCode(r.code);
+      setTgToken("");
+      await reloadTg();
+    } catch (e) {
+      setTgError(String(e));
+    } finally {
+      setTgBusy(false);
+    }
+  };
+  const tgDisconnect = async () => {
+    setTgBusy(true);
+    try {
+      await api.tgDisconnect();
+      setTgCode(""); setTgUsername("");
+      await reloadTg();
+    } finally {
+      setTgBusy(false);
+    }
+  };
+  const tgTest = async () => {
+    try { await api.tgTest(); } catch (e) { setTgError(String(e)); }
   };
 
   useEffect(() => {
@@ -414,6 +454,44 @@ export function SettingsPanel() {
               </Button>
             </>
           )}
+        </div>
+
+        <div className="rounded-lg border border-border p-3 space-y-2">
+          <Label>{t("settings.tgTitle")}</Label>
+          <p className="text-xs text-muted-foreground">{t("settings.tgHint")}</p>
+          {!tgState?.linked ? (
+            <>
+              <div className="flex gap-2">
+                <Input
+                  type="password"
+                  placeholder="123456789:AAH…"
+                  value={tgToken}
+                  onChange={(e) => setTgToken(e.target.value)}
+                />
+                <Button variant="outline" disabled={tgBusy || !tgToken.trim()} onClick={() => void tgConnect()}>
+                  {t("settings.tgConnect")}
+                </Button>
+              </div>
+              {tgUsername && !tgState?.linked && (
+                <p className="text-xs text-muted-foreground">@{tgUsername}</p>
+              )}
+              {tgCode && !tgState?.linked && (
+                <div className="rounded bg-muted px-3 py-2 text-sm">
+                  {t("settings.tgCodeHint")}
+                  <span className="ml-2 font-mono text-xl font-bold tracking-widest">{tgCode}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-emerald-500">✔ {t("settings.tgLinked")} @{tgUsername || "bot"}</p>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" onClick={() => void tgTest()}>{t("settings.tgTest")}</Button>
+                <Button variant="ghost" size="sm" onClick={() => void tgDisconnect()}>{t("settings.tgDisconnect")}</Button>
+              </div>
+            </div>
+          )}
+          {tgError && <p className="text-xs text-red-500">{tgError}</p>}
         </div>
 
         <Button variant="outline" onClick={() => setHelpOpen(true)} className="w-full">

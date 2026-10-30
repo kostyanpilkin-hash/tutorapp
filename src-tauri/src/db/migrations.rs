@@ -209,6 +209,31 @@ pub fn run(conn: &Connection) -> Result<(), String> {
 
     migrate_activity_log(conn)?;
 
+    // Telegram bot: linked chats (owner now; students later) and sent-message
+    // dedupe keys (reminders, digests).
+    let _ = conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS telegram_chats (
+            chat_id INTEGER PRIMARY KEY,
+            role TEXT NOT NULL DEFAULT 'owner',
+            student_id TEXT,
+            title TEXT,
+            linked_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_sent (
+            key TEXT PRIMARY KEY,
+            sent_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_refs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lesson_key TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );",
+    );
+    let _ = conn.execute(
+        "DELETE FROM telegram_sent WHERE sent_at < datetime('now', '-14 days')",
+        [],
+    );
+
     // Retention: keep the newest 5000 journal entries.
     let _ = conn.execute(
         "DELETE FROM activity_log WHERE id IN (

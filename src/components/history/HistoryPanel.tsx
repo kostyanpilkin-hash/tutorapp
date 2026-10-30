@@ -122,8 +122,10 @@ export function HistoryPanel() {
   const UNDOABLE = new Set(["deleted", "series_deleted", "series_deleted_from"]);
   const canUndo = (e: ActivityLogEntry) => UNDOABLE.has(e.action) && !!e.details;
   // For lesson-level entries `details` holds the instance date (not an archive id).
-  const lessonDate = (e: ActivityLogEntry) =>
-    e.category === "lesson" && !UNDOABLE.has(e.action) && e.details ? e.details : null;
+  const lessonDate = (e: ActivityLogEntry) => {
+    if (e.category !== "lesson" || UNDOABLE.has(e.action) || !e.details) return null;
+    return Number.isNaN(new Date(e.details).getTime()) ? null : e.details;
+  };
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto p-1">

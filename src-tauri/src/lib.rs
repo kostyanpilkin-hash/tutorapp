@@ -2,8 +2,10 @@ mod commands;
 mod db;
 mod http_server;
 mod models;
+mod occurrences;
 mod recurrence;
 mod scheduler;
+mod telegram;
 #[cfg(windows)]
 mod windows_toast;
 
@@ -78,11 +80,17 @@ pub fn run() {
             http_server::get_phone_links,
             http_server::reset_phone_key,
             http_server::set_phone_server,
+            telegram::tg_status,
+            telegram::tg_connect,
+            telegram::tg_disconnect,
+            telegram::tg_test,
+            telegram::tg_preferences,
             apply_prepaid_lessons,
             get_student_photo_data_url,
         ])
         .setup(|app| {
             http_server::maybe_start();
+            tauri::async_runtime::spawn(async { telegram::start_bot().await });
             let open_item = MenuItem::with_id(app, "open", "Открыть", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
