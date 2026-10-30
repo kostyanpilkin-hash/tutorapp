@@ -299,42 +299,59 @@ let key = params.get('key') || localStorage.getItem('pk') || '';
 if (params.get('key')) localStorage.setItem('pk', key);
 const STATUS = {completed:['Проведено','green'],no_show:['Не состоялось','amber'],cancelled:['Отменено','red']};
 const PAY = {paid:['Оплачено','green'],unpaid:['Не оплачено','red'],prepaid:['Предоплата','']};
+const CACHE='ta-cache';
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function render(rows){
+  const days = {};
+  for(const l of rows){
+    const d = new Date(l.start);
+    const k = d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    (days[k]=days[k]||[]).push(l);
+  }
+  const todayK = (()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()})();
+  const tomorrowK = (()=>{const d=new Date(Date.now()+864e5);return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()})();
+  const names = {[todayK]:'Сегодня',[tomorrowK]:'Завтра'};
+  let html = '';
+  for(const k of Object.keys(days)){
+    const d = days[k][0] && new Date(days[k][0].start);
+    const lbl = names[k] || d.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
+    html += '<div class="day'+(names[k]?' accent':'')+'">'+lbl+'</div>';
+    for(const l of days[k]){
+      const t = new Date(l.start);
+      const hh = String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+      let chips = '';
+      const st = STATUS[l.status]; if(st) chips += '<span class="chip '+st[1]+'">'+st[0]+'</span>';
+      const p = PAY[l.paymentStatus]; if(p) chips += '<span class="chip '+p[1]+'">'+p[0]+'</span>';
+      if(!st && !p) chips = '<span class="chip">По расписанию</span>';
+      html += '<div class="card"><div class="dot" style="background:'+(l.color||'#0a84ff')+'"></div>'+
+        '<div class="time"><div class="t">'+hh+'</div><div class="d">'+l.durationMinutes+' мин</div></div>'+
+        '<div class="info"><div class="name">'+esc(l.name)+'</div><div class="chips">'+chips+'</div></div></div>';
+    }
+  }
+  document.getElementById('list').innerHTML = html || '<div class="sub">Ближайших занятий нет</div>';
+}
 async function load(){
   const sub = document.getElementById('sub');
   try{
     const r = await fetch('api/lessons?key='+encodeURIComponent(key));
     if(r.status===401){sub.innerHTML='<span class="err">Неверный ключ. Откройте ссылку с QR-кода заново.</span>';return}
+    if(!r.ok) throw new Error('http '+r.status);
     const rows = await r.json();
+    try{localStorage.setItem(CACHE,JSON.stringify({ts:Date.now(),rows}))}catch(_){}
     sub.textContent = 'Обновлено ' + new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-    const days = {};
-    for(const l of rows){
-      const d = new Date(l.start);
-      const k = d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
-      (days[k]=days[k]||[]).push(l);
+    render(rows);
+  }catch(e){
+    let c = null;
+    try{c = JSON.parse(localStorage.getItem(CACHE)||'null')}catch(_){}
+    if(c && Array.isArray(c.rows)){
+      const d = new Date(c.ts);
+      sub.innerHTML='<span class="err">Нет соединения — показаны данные на '+
+        d.toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+'</span>';
+      render(c.rows);
+    }else{
+      sub.innerHTML='<span class="err">Нет соединения с компьютером. Проверьте Wi-Fi и что приложение запущено.</span>'
     }
-    const todayK = (()=>{const d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()})();
-    const tomorrowK = (()=>{const d=new Date(Date.now()+864e5);return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()})();
-    const names = {[todayK]:'Сегодня',[tomorrowK]:'Завтра'};
-    let html = '';
-    for(const k of Object.keys(days)){
-      const d = days[k][0] && new Date(days[k][0].start);
-      const lbl = names[k] || d.toLocaleDateString('ru-RU',{weekday:'long',day:'numeric',month:'long'});
-      html += '<div class="day'+(names[k]?' accent':'')+'">'+lbl+'</div>';
-      for(const l of days[k]){
-        const t = new Date(l.start);
-        const hh = String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
-        let chips = '';
-        const st = STATUS[l.status]; if(st) chips += '<span class="chip '+st[1]+'">'+st[0]+'</span>';
-        const p = PAY[l.paymentStatus]; if(p) chips += '<span class="chip '+p[1]+'">'+p[0]+'</span>';
-        if(!st && !p) chips = '<span class="chip">По расписанию</span>';
-        html += '<div class="card"><div class="dot" style="background:'+(l.color||'#0a84ff')+'"></div>'+
-          '<div class="time"><div class="t">'+hh+'</div><div class="d">'+l.durationMinutes+' мин</div></div>'+
-          '<div class="info"><div class="name">'+esc(l.name)+'</div><div class="chips">'+chips+'</div></div></div>';
-      }
-    }
-    document.getElementById('list').innerHTML = html || '<div class="sub">Ближайших занятий нет</div>';
-  }catch(e){sub.innerHTML='<span class="err">Нет соединения с компьютером. Проверьте Wi-Fi и что приложение запущено.</span>'}
+  }
 }
 load(); setInterval(load, 60000);
 </script>
