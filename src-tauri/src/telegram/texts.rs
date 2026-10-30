@@ -65,4 +65,26 @@ impl T {
     pub fn link_text(&self) -> &'static str { self.s("Ссылка", "Link", "Спасылка") }
     pub fn test_ok(&self) -> &'static str { self.s("Связь с TutorApp работает ✅", "TutorApp connection works ✅", "Сувязь з TutorApp працуе ✅") }
     pub fn not_linked(&self) -> &'static str { self.s("Неверная команда. Используйте кнопки ниже.", "Unknown command. Use the buttons below.", "Невядомая каманда. Выкарыстоўвайце кнопкі ніжэй.") }
+    pub fn paid_label(&self) -> &'static str { self.s("оплачено", "paid", "аплачана") }
+    pub fn stats_lessons(&self, n: usize) -> String {
+        match self.0 {
+            L::Ru => format!("{n} занятий"),
+            L::En => format!("{n} lessons"),
+            L::Be => format!("{n} заняткаў"),
+        }
+    }
+    pub fn stats_done(&self, n: usize) -> String {
+        match self.0 {
+            L::Ru => format!("{n} проведено"),
+            L::En => format!("{n} done"),
+            L::Be => format!("{n} праведзена"),
+        }
+    }
+    pub fn stats_left(&self, n: usize) -> String {
+        match self.0 {
+            L::Ru => format!("{n} впереди"),
+            L::En => format!("{n} ahead"),
+            L::Be => format!("{n} наперадзе"),
+        }
+    }
 }

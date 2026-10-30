@@ -117,59 +117,102 @@ pub fn actions_markup(t: &T, conn: &Connection, occ_id: &str) -> Value {
     ]})
 }
 
-// ---------- formatting ----------
-
-fn color_dot(color: &Option<String>) -> &'static str {
-    let Some(c) = color else { return "⚪" };
-    let c = c.to_lowercase();
-    if c.contains("red") || c.contains("f43f5e") || c.contains("ef4444") || c.contains("dc2626") { "🔴" }
-    else if c.contains("orange") || c.contains("f59e0b") || c.contains("ea580c") { "🟠" }
-    else if c.contains("amber") || c.contains("yellow") || c.contains("eab308") { "🟡" }
-    else if c.contains("emerald") || c.contains("green") || c.contains("22c55e") || c.contains("10b981") { "🟢" }
-    else if c.contains("cyan") || c.contains("sky") || c.contains("0ea5e9") { "🔵" }
-    else if c.contains("blue") || c.contains("6366f1") || c.contains("3b82f6") || c.contains("indigo") { "🔵" }
-    else if c.contains("violet") || c.contains("purple") || c.contains("a855f7") { "🟣" }
-    else if c.contains("pink") || c.contains("ec4899") { "🟣" }
-    else { "⚪" }
-}
-
-fn status_mark(status: &str, pay: &str) -> &'static str {
-    match status {
-        "completed" => if pay == "paid" { " ✅💰" } else { " ✅" },
-        "no_show" => " ❌",
-        "cancelled" => " 🚫",
-        _ => "",
+/// Per-lesson action rows for day lists: each scheduled lesson gets
+/// `✅HH:MM` `❌` `💰` `🚫` matching the lesson order top-to-bottom.
+pub fn day_actions_markup(_t: &T, conn: &Connection, occs: &[Occ], tz: chrono_tz::Tz) -> Option<Value> {
+    let mut rows: Vec<Value> = Vec::new();
+    for o in occs.iter().filter(|o| o.status == "scheduled").take(8) {
+        let r = create_ref(conn, &o.id);
+        let cb = |a: &str| format!(r#"{{"a":"{a}","r":{r}}}"#);
+        let hhmm = o.start_utc.with_timezone(&tz).format("%H:%M");
+        rows.push(json!([
+            { "text": format!("{hhmm} ✅"), "callback_data": cb("c") },
+            { "text": "❌", "callback_data": cb("n") },
+            { "text": "💰", "callback_data": cb("p") },
+            { "text": "🚫", "callback_data": cb("x") },
+        ]));
+    }
+    if rows.is_empty() {
+        None
+    } else {
+        Some(json!({ "inline_keyboard": rows }))
     }
 }
 
+// ---------- formatting ----------
+
+fn status_icon(status: &str, _pay: &str) -> &'static str {
+    match status {
+        "completed" => "✅",
+        "no_show" => "❌",
+        "cancelled" => "🚫",
+        _ => "🕓",
+    }
+}
+
+/// Two-line lesson entry: icon + bold time + name, then indented details.
 pub fn fmt_lesson_line(t: &T, o: &Occ, tz: chrono_tz::Tz, fields: &[String]) -> String {
     let s = o.start_utc.with_timezone(&tz);
     let e = s + Duration::minutes(o.duration_minutes);
-    let mut line = format!("{}{}–{} {}", color_dot(&o.color), s.format("%H:%M"), e.format("%H:%M"), esc(&o.name));
-    line.push_str(status_mark(&o.status, &o.payment_status));
+    let mut line = format!(
+        "{} <b>{}–{}</b> · {}",
+        status_icon(&o.status, &o.payment_status),
+        s.format("%H:%M"),
+        e.format("%H:%M"),
+        esc(&o.name),
+    );
+    if o.status == "completed" && o.payment_status == "paid" {
+        line.push_str(&format!(" · {}", t.paid_label()));
+    }
+    let mut details: Vec<String> = Vec::new();
     if fields.iter().any(|f| f == "subject") && !o.subject.is_empty() {
-        line.push_str(&format!(" — {}", esc(&o.subject)));
+        details.push(esc(&o.subject));
     }
     if fields.iter().any(|f| f == "duration") {
-        line.push_str(&format!(" ({}m)", o.duration_minutes));
+        details.push(format!("{} мин", o.duration_minutes));
     }
     if fields.iter().any(|f| f == "cost") && o.cost > 0.0 {
-        line.push_str(&format!(" — {} {}", o.cost, esc(&o.currency)));
+        details.push(format!("{} {}", o.cost, esc(&o.currency)));
     }
-    let _ = t;
+    if fields.iter().any(|f| f == "link") {
+        if let Some(l) = &o.link {
+            details.push(format!("<a href=\"{}\">🔗</a>", esc(l)));
+        }
+    }
+    if !details.is_empty() {
+        line.push_str(&format!("\n    {}", details.join(" · ")));
+    }
     line
+}
+
+fn day_stats(t: &T, occs: &[Occ]) -> String {
+    let done = occs.iter().filter(|o| o.status == "completed").count();
+    let left = occs.iter().filter(|o| o.status == "scheduled").count();
+    let noshow = occs.iter().filter(|o| o.status == "no_show").count();
+    let cancelled = occs.iter().filter(|o| o.status == "cancelled").count();
+    let mut parts = vec![format!("{} · {}", t.stats_lessons(occs.len()), t.stats_done(done))];
+    if left > 0 { parts.push(t.stats_left(left)); }
+    if noshow > 0 { parts.push(format!("{} ❌", noshow)); }
+    if cancelled > 0 { parts.push(format!("{} 🚫", cancelled)); }
+    parts.join(" · ")
 }
 
 pub fn day_message(t: &T, date: NaiveDate, occs: &[Occ], tz: chrono_tz::Tz, fields: &[String], title: &str) -> String {
     if occs.is_empty() {
-        return format!("<b>{} — {}</b>\n{}", title, date.format("%d.%m"), t.no_lessons());
+        return format!("<b>{} · {} {}</b>\n{}", title, weekday_name(t, date), date.format("%d.%m"), t.no_lessons());
     }
-    let mut s = format!("<b>{} — {}</b>\n", title, date.format("%d.%m"));
+    let mut s = format!(
+        "<b>{} · {} {}</b>\n<blockquote>{}</blockquote>\n",
+        title,
+        weekday_name(t, date),
+        date.format("%d.%m"),
+        day_stats(t, occs),
+    );
     for o in occs {
         s.push_str(&fmt_lesson_line(t, o, tz, fields));
-        s.push('\n');
+        s.push_str("\n\n");
     }
-    s
+    s.trim_end().to_string()
 }
 
 fn weekday_name(t: &T, d: NaiveDate) -> &'static str {
@@ -188,18 +231,20 @@ fn weekday_name(t: &T, d: NaiveDate) -> &'static str {
 pub fn week_message(t: &T, start: NaiveDate, occs: &[Occ], tz: chrono_tz::Tz, fields: &[String]) -> String {
     let mut s = String::from("<b>🗓 ");
     s.push_str(t.week());
-    s.push_str("</b>\n");
+    s.push_str("</b>\n<blockquote>");
+    s.push_str(&day_stats(t, occs));
+    s.push_str("</blockquote>\n");
     for i in 0..7 {
         let d = start + Duration::days(i);
         let day: Vec<&Occ> = occs.iter().filter(|o| o.start_utc.with_timezone(&tz).date_naive() == d).collect();
         if day.is_empty() { continue; }
-        s.push_str(&format!("\n<b>{} {}</b>\n", weekday_name(t, d), d.format("%d.%m")));
+        s.push_str(&format!("\n<b>▸ {} {}</b>\n\n", weekday_name(t, d), d.format("%d.%m")));
         for o in day {
             s.push_str(&fmt_lesson_line(t, o, tz, fields));
-            s.push('\n');
+            s.push_str("\n\n");
         }
     }
-    s
+    s.trim_end().to_string()
 }
 
 // ---------- poll loop ----------
@@ -299,13 +344,17 @@ async fn handle_message(bot: &Bot, m: Message) -> Result<(), String> {
     match kind {
         "today" => {
             let occs = day_occurrences(&conn, today)?;
-            let title = if normalized == "/start" { t.today() } else { t.today() };
-            bot.send(chat_id, &day_message(&t, today, &occs, tz, &fields, title), Some(reply_keyboard(&t)), true).await?;
+            let mut markup = reply_keyboard(&t);
+            if let Some(inline) = day_actions_markup(&t, &conn, &occs, tz) {
+                markup = inline;
+            }
+            bot.send(chat_id, &day_message(&t, today, &occs, tz, &fields, t.today()), Some(markup), true).await?;
         }
         "tomorrow" => {
             let d = today + Duration::days(1);
             let occs = day_occurrences(&conn, d)?;
-            bot.send(chat_id, &day_message(&t, d, &occs, tz, &fields, t.tomorrow()), None, true).await?;
+            let markup = day_actions_markup(&t, &conn, &occs, tz).unwrap_or(Value::Null);
+            bot.send(chat_id, &day_message(&t, d, &occs, tz, &fields, t.tomorrow()), if markup.is_null() { None } else { Some(markup) }, true).await?;
         }
         "week" => {
             // Same range as the app's week view: Monday–Sunday.
@@ -316,7 +365,7 @@ async fn handle_message(bot: &Bot, m: Message) -> Result<(), String> {
         "morning" => {
             let occs = day_occurrences(&conn, today)?;
             let msg = if occs.is_empty() { t.free_day().to_string() } else { day_message(&t, today, &occs, tz, &fields, t.morning_digest()) };
-            bot.send(chat_id, &msg, None, true).await?;
+            bot.send(chat_id, &msg, day_actions_markup(&t, &conn, &occs, tz), true).await?;
         }
         "evening" => {
             let occs = day_occurrences(&conn, today)?;
@@ -345,10 +394,12 @@ fn evening_summary(t: &T, occs: &[Occ], _tz: chrono_tz::Tz, fields: &[String]) -
     let noshow = occs.iter().filter(|o| o.status == "no_show").count();
     let cancelled = occs.iter().filter(|o| o.status == "cancelled").count();
     let unpaid: Vec<&Occ> = occs.iter().filter(|o| (o.status == "completed" || o.status == "no_show") && o.payment_status == "unpaid" && o.cost > 0.0).collect();
-    let mut s = format!("<b>{}</b>\n", t.evening_digest());
-    s.push_str(&format!("{} {} ✅ · {} ❌ · {} 🚫\n", t.summary_label(), done, noshow, cancelled));
+    let mut s = format!(
+        "<b>{}</b>\n<blockquote>✅ {} · ❌ {} · 🚫 {}</blockquote>\n",
+        t.evening_digest(), done, noshow, cancelled,
+    );
     if !unpaid.is_empty() {
-        s.push_str(&format!("{}\n", t.unpaid_label()));
+        s.push_str(&format!("\n<b>{}</b>\n", t.unpaid_label()));
         for o in unpaid {
             s.push_str(&format!("• {}{}\n", esc(&o.name), if fields.iter().any(|f| f == "cost") && o.cost > 0.0 { format!(" — {} {}", o.cost, esc(&o.currency)) } else { String::new() }));
         }
@@ -382,7 +433,7 @@ fn debts_message(t: &T, conn: &Connection) -> Result<String, String> {
     }
     let mut s = format!("<b>{}</b>\n", t.debts());
     for (name, n, sum, cur) in rows {
-        s.push_str(&format!("• {} — {} ×, {} {}\n", esc(&name), n, sum, esc(&cur)));
+        s.push_str(&format!("💸 <b>{}</b>\n    {} × · {} {}\n", esc(&name), n, sum, esc(&cur)));
     }
     Ok(s)
 }
