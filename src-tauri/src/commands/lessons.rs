@@ -18,8 +18,9 @@ pub use archive::{delete_lesson_series_from_instance, restore_lesson_archive};
 pub(crate) use overlaps::{find_overlaps, overlap_error};
 pub use overlaps::check_overlaps;
 pub(crate) use repo::{
-    delete_lesson_cascade, insert_reminders, load_lesson_by_id, resolve_lesson_color,
-    row_to_lesson, same_instant_str, save_lesson_students, student_names,
+    delete_lesson_cascade, insert_reminders, lesson_display_name, lesson_display_names,
+    load_lesson_by_id, resolve_lesson_color, row_to_lesson, same_instant_str,
+    save_lesson_students, student_names,
 };
 
 const LESSON_SELECT: &str = "SELECT id, student_name, subject, start_at, duration_minutes, cost, currency, link, notes, materials, materials_link, status, payment_status, recurrence_rule, recurrence_parent_id, recurrence_instance_date, color, created_at, updated_at";
@@ -471,6 +472,9 @@ pub fn delete_lesson(state: tauri::State<AppState>, id: String) -> Result<(), St
                     |r| Ok((r.get(0)?, r.get(1)?)),
                 )
                 .ok();
+            let meta = meta.map(|(n, s)| {
+                (lesson_display_name(conn, &id, &n).unwrap_or(n), s)
+            });
             let ids = lesson_with_children(conn, &id);
             let archive_id = archive_rows(conn, "delete", &ids)?;
             conn.execute(
@@ -516,6 +520,9 @@ pub fn delete_lesson_series(state: tauri::State<AppState>, id: String) -> Result
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
                 .ok();
+            let meta = meta.map(|(n, s, r)| {
+                (lesson_display_name(conn, &root, &n).unwrap_or(n), s, r)
+            });
             let ids = lesson_with_children(conn, &root);
             let archive_id = archive_rows(conn, "series_delete", &ids)?;
             conn.execute(
@@ -565,6 +572,9 @@ pub fn update_lesson_status(
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
                 .ok();
+            let old = old.map(|(n, st, ps)| {
+                (lesson_display_name(conn, &id, &n).unwrap_or(n), st, ps)
+            });
             if let Some(ps) = payment_status.clone() {
                 conn.execute(
                     "UPDATE lessons SET status = ?2, payment_status = ?3, updated_at = ?4 WHERE id = ?1",
@@ -1093,6 +1103,42 @@ mod tests {
         )
         .unwrap();
         assert!(overlaps.is_empty());
+    }
+
+    #[test]
+    fn display_name_resolves_via_students_and_falls_back() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Anna");
+        // Linked lesson — stored name is a snapshot taken at write time.
+        insert_lesson(&conn, "l1", "Anna", "2030-01-10T12:00:00Z", 60, "scheduled");
+        conn.execute(
+            "INSERT INTO lesson_students (lesson_id, student_id, payment_status)
+             VALUES ('l1', 's1', 'unpaid')",
+            [],
+        )
+        .unwrap();
+        // Orphaned lesson — no lesson_students rows, stored name only.
+        insert_lesson(&conn, "l2", "Ghost", "2030-01-10T14:00:00Z", 60, "scheduled");
+
+        // Renaming the student updates every read path without touching lessons.
+        conn.execute("UPDATE students SET name = 'Anya' WHERE id = 's1'", [])
+            .unwrap();
+
+        assert_eq!(load_lesson_by_id(&conn, "l1").unwrap().student_name, "Anya");
+        assert_eq!(
+            load_lesson_by_id(&conn, "l2").unwrap().student_name,
+            "Ghost"
+        );
+
+        let occs = crate::occurrences::collect(
+            &conn,
+            chrono_tz::Europe::Moscow,
+            chrono::NaiveDate::from_ymd_opt(2030, 1, 9).unwrap(),
+            chrono::NaiveDate::from_ymd_opt(2030, 1, 12).unwrap(),
+        )
+        .unwrap();
+        let names: Vec<&str> = occs.iter().map(|o| o.name.as_str()).collect();
+        assert_eq!(names, ["Anya", "Ghost"]);
     }
 
     /// Parity dump for `src/lib/parity.test.ts`: expands a real DB copy for the

@@ -77,7 +77,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
              FROM lessons",
         )
         .map_err(|e| e.to_string())?;
-    let rows: Vec<Raw> = stmt
+    let mut rows: Vec<Raw> = stmt
         .query_map([], |r| {
             Ok(Raw {
                 id: r.get(0)?,
@@ -102,6 +102,15 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
         .map_err(|e| e.to_string())?
         .filter_map(|r| r.ok())
         .collect();
+
+    // Display names resolve through lesson_students → students; orphaned
+    // lessons keep their stored `student_name`.
+    let display_names = crate::commands::lessons::lesson_display_names(conn)?;
+    for r in rows.iter_mut() {
+        if let Some(n) = display_names.get(&r.id) {
+            n.clone_into(&mut r.name);
+        }
+    }
 
     let mut out: Vec<Occ> = Vec::new();
     let mut used_exceptions: HashSet<String> = HashSet::new();

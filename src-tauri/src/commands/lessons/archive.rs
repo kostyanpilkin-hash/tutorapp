@@ -197,7 +197,10 @@ pub fn delete_lesson_series_from_instance(
                     params![parent_id],
                     |r| r.get(0),
                 )
-                .ok();
+                .ok()
+                .map(|n: String| {
+                    lesson_display_name(conn, &parent_id, &n).unwrap_or(n)
+                });
             log_activity(
                 conn,
                 "lesson",

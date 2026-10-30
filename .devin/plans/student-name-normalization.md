@@ -1,6 +1,11 @@
 # student_name normalization
 
-## Статус: к исполнению (новый тред, первая задача)
+## Статус: выполнено (2026-10-30)
+
+- Резолв имени через `lesson_students → students` (ORDER BY s.name — как `load_lesson_students`); fallback — `lessons.student_name` для осиротевших.
+- Покрыто: `row_to_lesson` (get_lessons/get_lesson/expanded), `occurrences::collect` (бот, телефон, планировщик, пересечения), `get_fired_reminders`, Telegram `apply_action`, имена в activity log (delete/status/payment).
+- Тест `display_name_resolves_via_students_and_falls_back`; дифф на реальной БД: Nзанятий, Norphans, 28 исправленных имён.
+- Колонка `student_name` сохранена и продолжает писаться (откат тривиален).
 
 ## Проблема
 

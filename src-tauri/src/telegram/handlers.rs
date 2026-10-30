@@ -546,7 +546,9 @@ fn apply_action(conn: &Connection, occ_id: &str, action: &str) -> Result<Option<
     let meta: Option<(String, String)> = conn
         .query_row("SELECT student_name, payment_status FROM lessons WHERE id = ?1", params![row_id], |r| Ok((r.get(0)?, r.get(1)?)))
         .ok();
-    let Some((name, old_pay)) = meta else { return Ok(None) };
+    let Some((stored, old_pay)) = meta else { return Ok(None) };
+    let name = crate::commands::lessons::lesson_display_name(conn, &row_id, &stored)
+        .unwrap_or(stored);
     let now = Utc::now().to_rfc3339();
     match action {
         "completed" | "no_show" | "cancelled" => {

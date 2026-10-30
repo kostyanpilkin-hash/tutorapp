@@ -76,8 +76,16 @@ pub fn get_fired_reminders(
                 })
             })
             .map_err(|e| e.to_string())?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())
+        let mut entries = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        let names = crate::commands::lessons::lesson_display_names(conn)?;
+        for e in &mut entries {
+            if let Some(n) = names.get(&e.lesson_id) {
+                n.clone_into(&mut e.student_name);
+            }
+        }
+        Ok(entries)
     })
 }
 

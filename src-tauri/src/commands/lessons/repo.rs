@@ -48,9 +48,14 @@ pub(crate) fn row_to_lesson(conn: &Connection, row: &Row) -> Result<Lesson, rusq
     let students = load_lesson_students(conn, &id).map_err(|e| {
         rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
     })?;
+    let stored_name: String = row.get(1)?;
     Ok(Lesson {
         id,
-        student_name: row.get(1)?,
+        student_name: if students.is_empty() {
+            stored_name
+        } else {
+            join_student_names(students.iter().map(|s| s.name.as_str()))
+        },
         subject: row.get(2)?,
         start_at: row.get(3)?,
         duration_minutes: row.get(4)?,
@@ -103,6 +108,66 @@ pub(crate) fn delete_lesson_cascade(conn: &Connection, id: &str) -> Result<(), S
     conn.execute("DELETE FROM lessons WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn join_student_names<'a>(names: impl Iterator<Item = &'a str>) -> String {
+    names.collect::<Vec<_>>().join(", ")
+}
+
+/// Display name for one lesson: names of linked students via
+/// `lesson_students → students` (same order as `load_lesson_students`),
+/// or `stored` (`lessons.student_name`) when the lesson is orphaned.
+pub(crate) fn lesson_display_name(
+    conn: &Connection,
+    lesson_id: &str,
+    stored: &str,
+) -> Result<String, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.name FROM lesson_students ls
+             JOIN students s ON s.id = ls.student_id
+             WHERE ls.lesson_id = ?1 ORDER BY s.name ASC",
+        )
+        .map_err(|e| e.to_string())?;
+    let names = stmt
+        .query_map(params![lesson_id], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    if names.is_empty() {
+        Ok(stored.to_string())
+    } else {
+        Ok(join_student_names(names.iter().map(|n| n.as_str())))
+    }
+}
+
+/// `lesson_id → joined student names` for every lesson with linked students.
+/// Callers fall back to `lessons.student_name` for ids absent from the map.
+pub(crate) fn lesson_display_names(
+    conn: &Connection,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT ls.lesson_id, s.name FROM lesson_students ls
+             JOIN students s ON s.id = ls.student_id
+             ORDER BY ls.lesson_id, s.name",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut grouped: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        let (lesson_id, name) = row.map_err(|e| e.to_string())?;
+        grouped.entry(lesson_id).or_default().push(name);
+    }
+    Ok(grouped
+        .into_iter()
+        .map(|(k, v)| (k, join_student_names(v.iter().map(|n| n.as_str()))))
+        .collect())
 }
 
 /// Keep a single exception per (parent, instance slot); prefer finalized status, then newest.
