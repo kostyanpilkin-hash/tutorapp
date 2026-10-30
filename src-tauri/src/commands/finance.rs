@@ -245,7 +245,12 @@ fn build_finance_entries(
         for instance_start in expand_weekly_instances(parent.start_at, &parent.recurrence_rule, from, to, tz) {
             if let Some(exception) = find_exception(&exceptions, &parent.id, instance_start) {
                 used_exception_ids.insert(exception.id.clone());
-                if exception.status != "cancelled" {
+                // The exception belongs to the period containing its actual start;
+                // suppressing the slot must not count it here when it was moved away.
+                if exception.status != "cancelled"
+                    && exception.start_at >= from
+                    && exception.start_at <= to
+                {
                     push_student_entries(
                         &mut out,
                         &exception.subject,
@@ -383,8 +388,7 @@ pub(crate) fn finance_report(
                     OR (l.recurrence_rule IS NOT NULL AND l.recurrence_rule != ''
                         AND (l.recurrence_parent_id IS NULL OR l.recurrence_parent_id = '')
                         AND l.start_at <= ?2)
-                    OR (l.recurrence_parent_id IS NOT NULL AND l.recurrence_parent_id != ''
-                        AND l.start_at >= ?1 AND l.start_at <= ?2)",
+                    OR (l.recurrence_parent_id IS NOT NULL AND l.recurrence_parent_id != '')",
             )
             .map_err(|e| e.to_string())?;
 
@@ -996,6 +1000,37 @@ mod tests {
         assert!((amount(&report, "BYN").unwrap_or(0.0) - 100.0).abs() < 1e-9);
     }
 
+    /// Dump finance reports for standard periods on a real DB copy.
+    /// `PARITY_DB=<copy> PARITY_OUT=<json> cargo test -- --ignored finance_report_dump`
+    #[test]
+    #[ignore]
+    fn finance_report_dump_real_db() {
+        let db = std::env::var("PARITY_DB").expect("PARITY_DB");
+        let out_path = std::env::var("PARITY_OUT").expect("PARITY_OUT");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        let tz = crate::occurrences::timezone(&conn);
+
+        let now = Utc::now();
+        let mut dump = Vec::new();
+        for period in ["day", "week", "month", "year"] {
+            let report = finance_report(&conn, period, now, None, None, tz).unwrap();
+            dump.push(serde_json::json!({"period": period, "report": report}));
+        }
+        let custom = finance_report(
+            &conn,
+            "custom",
+            now,
+            Some(now - Duration::days(400)),
+            Some(now + Duration::days(400)),
+            tz,
+        )
+        .unwrap();
+        dump.push(serde_json::json!({"period": "custom400", "report": custom}));
+        std::fs::write(&out_path, serde_json::to_string_pretty(&dump).unwrap()).unwrap();
+    }
+
     #[test]
     fn finance_excludes_cancelled_and_zero_cost() {
         let conn = test_conn();
@@ -1033,5 +1068,76 @@ mod tests {
         assert!(report.earned.is_empty());
         assert!(report.debt.is_empty());
         assert!(report.expected.is_empty());
+    }
+
+    #[test]
+    fn finance_moved_exception_counts_once_in_target_period() {
+        let conn = test_conn();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('timezone', 'Europe/Minsk')",
+            [],
+        )
+        .unwrap();
+        insert_student(&conn, "s1", "Ivan");
+        let now = Utc::now().to_rfc3339();
+        // Weekly parent: Mondays 15:00 UTC since 2026-03-02 (Monday), 20 USD.
+        conn.execute(
+            "INSERT INTO lessons (id, student_name, subject, start_at, duration_minutes, cost, currency, status, payment_status, recurrence_rule, created_at, updated_at)
+             VALUES ('p1', 'Ivan', 'Math', '2026-03-02T15:00:00Z', 60, 20.0, 'USD', 'scheduled', 'unpaid', 'FREQ=WEEKLY;BYDAY=MO', ?1, ?1)",
+            params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO lesson_students (lesson_id, student_id, cost, currency, payment_status)
+             VALUES ('p1', 's1', NULL, NULL, 'unpaid')",
+            [],
+        )
+        .unwrap();
+        // Exception: the Mar-30 slot was moved to Apr 6 and paid.
+        conn.execute(
+            "INSERT INTO lessons (id, student_name, subject, start_at, duration_minutes, cost, currency, status, payment_status, recurrence_parent_id, recurrence_instance_date, created_at, updated_at)
+             VALUES ('e1', 'Ivan', 'Math', '2026-04-06T15:00:00Z', 60, 20.0, 'USD', 'completed', 'paid', 'p1', '2026-03-30T15:00:00Z', ?1, ?1)",
+            params![now],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO lesson_students (lesson_id, student_id, cost, currency, payment_status)
+             VALUES ('e1', 's1', NULL, NULL, 'paid')",
+            [],
+        )
+        .unwrap();
+
+        let tz: Tz = "Europe/Minsk".parse().unwrap();
+        let usd = |v: &[CurrencyAmount]| {
+            v.iter().find(|e| e.currency == "USD").map(|e| e.amount).unwrap_or(0.0)
+        };
+
+        // March: the Mar-30 slot is suppressed by the moved-away exception —
+        // 4 unpaid past slots => debt 80, and the paid lesson is NOT counted here.
+        let march = finance_report(
+            &conn,
+            "month",
+            "2026-03-15T12:00:00Z".parse().unwrap(),
+            None,
+            None,
+            tz,
+        )
+        .unwrap();
+        assert!(march.earned.is_empty());
+        assert!((usd(&march.debt) - 80.0).abs() < 1e-9);
+
+        // April: the exception is counted exactly once (earned 20);
+        // the 4 April parent slots are past scheduled unpaid => debt 80.
+        let april = finance_report(
+            &conn,
+            "month",
+            "2026-04-15T12:00:00Z".parse().unwrap(),
+            None,
+            None,
+            tz,
+        )
+        .unwrap();
+        assert!((usd(&april.earned) - 20.0).abs() < 1e-9);
+        assert!((usd(&april.debt) - 80.0).abs() < 1e-9);
     }
 }
