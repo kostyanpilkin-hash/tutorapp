@@ -48,6 +48,8 @@ struct Raw {
     notes: Option<String>,
     cost: f64,
     currency: String,
+    updated: String,
+    created: String,
 }
 
 pub fn timezone(conn: &Connection) -> chrono_tz::Tz {
@@ -64,7 +66,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
         .prepare(
             "SELECT id, student_name, start_at, duration_minutes, status, payment_status, color,
                     recurrence_rule, recurrence_parent_id, recurrence_instance_date,
-                    subject, link, notes, cost, currency
+                    subject, link, notes, cost, currency, updated_at, created_at
              FROM lessons",
         )
         .map_err(|e| e.to_string())?;
@@ -86,6 +88,8 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
                 notes: r.get(12)?,
                 cost: r.get::<_, Option<f64>>(13)?.unwrap_or(0.0),
                 currency: r.get::<_, Option<String>>(14)?.unwrap_or_default(),
+                updated: r.get::<_, Option<String>>(15)?.unwrap_or_default(),
+                created: r.get::<_, Option<String>>(16)?.unwrap_or_default(),
             })
         })
         .map_err(|e| e.to_string())?
@@ -93,72 +97,104 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
         .collect();
 
     let mut out: Vec<Occ> = Vec::new();
+    let mut used_exceptions: HashSet<String> = HashSet::new();
 
-    let mut exceptions: HashMap<String, HashSet<NaiveDate>> = HashMap::new();
+    // Exceptions grouped by parent id, resolved to their slot's instant.
+    let mut exceptions: HashMap<String, Vec<&Raw>> = HashMap::new();
     for r in &rows {
-        if let (Some(pid), Some(idate)) = (&r.parent, &r.idate) {
-            if let Some(d) = parse_any_date(idate, tz) {
-                exceptions.entry(pid.clone()).or_default().insert(d);
-            }
+        if let (Some(pid), Some(_)) = (&r.parent, &r.idate) {
+            exceptions.entry(pid.clone()).or_default().push(r);
         }
     }
 
     for r in &rows {
         if r.parent.is_some() {
-            if r.status != "cancelled" {
-                if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
-                    let d = dt.with_timezone(&tz).date_naive();
-                    if d >= from && d <= to {
-                        out.push(mk_occ(r, r.id.clone(), dt));
-                    }
-                }
-            }
-            continue;
+            continue; // handled after the series pass
         }
 
-        if let Some(rule) = &r.rule {
-            if let Some((mut bydays, interval, until, count)) = parse_rule(rule) {
-                if let Ok(start_utc) = r.start.parse::<DateTime<Utc>>() {
-                    let anchor = start_utc.with_timezone(&tz);
-                    let anchor_date = anchor.date_naive();
-                    let time = anchor.time();
-                    if bydays.is_empty() {
-                        bydays = vec![anchor_date.weekday()];
-                    }
-                    let monday = anchor_date - Duration::days(anchor_date.weekday().num_days_from_monday() as i64);
-                    let last = until.map(|u| u.min(to)).unwrap_or(to);
-                    let exs = exceptions.get(&r.id).cloned().unwrap_or_default();
-
-                    let mut emitted_total = 0i64;
-                    let mut week = monday;
-                    while week <= last && count.map(|c| emitted_total < c).unwrap_or(true) {
-                        for wd in &bydays {
-                            let d = week + Duration::days(wd.num_days_from_monday() as i64);
-                            if d < anchor_date || d > last {
-                                continue;
-                            }
-                            emitted_total += 1;
-                            if count.map(|c| emitted_total > c).unwrap_or(false) {
-                                break;
-                            }
-                            if exs.contains(&d) || d < from || d > to {
-                                continue;
-                            }
-                            if let Some(local_dt) = tz.from_local_datetime(&d.and_time(time)).single() {
-                                let utc = local_dt.with_timezone(&Utc);
-                                out.push(mk_occ(r, format!("{}@{}", r.id, d.format("%Y%m%d")), utc));
-                            }
-                        }
-                        week += Duration::weeks(interval.max(1));
-                    }
+        let parsed_rule = r.rule.as_deref().and_then(parse_rule);
+        if let Some((mut bydays, interval, until, count)) = parsed_rule {
+            if let Ok(start_utc) = r.start.parse::<DateTime<Utc>>() {
+                let anchor = start_utc.with_timezone(&tz);
+                let anchor_date = anchor.date_naive();
+                let time = anchor.time();
+                if bydays.is_empty() {
+                    bydays = vec![anchor_date.weekday()];
                 }
-            } else if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
-                let d = dt.with_timezone(&tz).date_naive();
-                if d >= from && d <= to {
-                    out.push(mk_occ(r, r.id.clone(), dt));
+                let monday = anchor_date - Duration::days(anchor_date.weekday().num_days_from_monday() as i64);
+                let exs = exceptions.get(&r.id).cloned().unwrap_or_default();
+
+                let mut emitted_total = 0i64;
+                let mut week = monday;
+                'weeks: while week <= to {
+                    for wd in &bydays {
+                        let d = week + Duration::days(wd.num_days_from_monday() as i64);
+                        if d < anchor_date {
+                            continue;
+                        }
+                        let Some(local_dt) = tz.from_local_datetime(&d.and_time(time)).single() else {
+                            continue;
+                        };
+                        let occ_utc = local_dt.with_timezone(&Utc);
+                        emitted_total += 1;
+                        if count.map(|c| emitted_total > c).unwrap_or(false) {
+                            break 'weeks;
+                        }
+                        // UNTIL is an exclusive instant (matches the frontend).
+                        if until.map(|u| occ_utc >= u).unwrap_or(false) {
+                            break 'weeks;
+                        }
+                        if d < from || d > to {
+                            continue;
+                        }
+                        // Slot overridden by exception row(s)? Pick the best one.
+                        let slot_matches: Vec<&Raw> = exs
+                            .iter()
+                            .copied()
+                            .filter(|e| {
+                                parse_any_date(e.idate.as_deref().unwrap_or(""), tz) == Some(d)
+                            })
+                            .collect();
+                        for m in &slot_matches {
+                            used_exceptions.insert(m.id.clone());
+                        }
+                        if let Some(best) = pick_exception(&slot_matches) {
+                            if best.status != "cancelled" {
+                                if let Ok(dt) = best.start.parse::<DateTime<Utc>>() {
+                                    let bd = dt.with_timezone(&tz).date_naive();
+                                    if bd >= from && bd <= to {
+                                        out.push(mk_occ(best, best.id.clone(), dt));
+                                    }
+                                }
+                            }
+                        } else {
+                            out.push(mk_occ(
+                                r,
+                                format!("{}@{}", r.id, d.format("%Y%m%d")),
+                                occ_utc,
+                            ));
+                        }
+                    }
+                    week += Duration::weeks(interval.max(1));
                 }
             }
         } else if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
+            let d = dt.with_timezone(&tz).date_naive();
+            if d >= from && d <= to {
+                out.push(mk_occ(r, r.id.clone(), dt));
+            }
+        }
+    }
+
+    // Exception rows not consumed by a series slot (e.g. rescheduled away).
+    for r in &rows {
+        if r.parent.is_none() || used_exceptions.contains(&r.id) {
+            continue;
+        }
+        if r.status == "cancelled" {
+            continue;
+        }
+        if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
             let d = dt.with_timezone(&tz).date_naive();
             if d >= from && d <= to {
                 out.push(mk_occ(r, r.id.clone(), dt));
@@ -170,6 +206,23 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
     out.retain(|o| seen.insert(o.id.clone()));
     out.sort_by(|a, b| a.start_utc.cmp(&b.start_utc));
     Ok(out)
+}
+
+/// Prefer the newest exception when several exist for one slot
+/// (completed > no_show > cancelled > other, then latest update).
+fn pick_exception<'a>(matches: &[&'a Raw]) -> Option<&'a Raw> {
+    fn rank(status: &str) -> u8 {
+        match status {
+            "completed" => 4,
+            "no_show" => 3,
+            "cancelled" => 2,
+            _ => 1,
+        }
+    }
+    matches
+        .iter()
+        .max_by_key(|m| (rank(&m.status), m.updated.clone(), m.created.clone()))
+        .copied()
 }
 
 fn mk_occ(r: &Raw, id: String, utc: DateTime<Utc>) -> Occ {
@@ -197,11 +250,11 @@ pub fn parse_any_date(s: &str, tz: chrono_tz::Tz) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-pub fn parse_rule(rule: &str) -> Option<(Vec<Weekday>, i64, Option<NaiveDate>, Option<i64>)> {
+pub fn parse_rule(rule: &str) -> Option<(Vec<Weekday>, i64, Option<DateTime<Utc>>, Option<i64>)> {
     let mut freq = String::new();
     let mut bydays: Vec<Weekday> = Vec::new();
     let mut interval: i64 = 1;
-    let mut until: Option<NaiveDate> = None;
+    let mut until: Option<DateTime<Utc>> = None;
     let mut count: Option<i64> = None;
     for part in rule.split(';') {
         let mut kv = part.splitn(2, '=');
@@ -226,10 +279,12 @@ pub fn parse_rule(rule: &str) -> Option<(Vec<Weekday>, i64, Option<NaiveDate>, O
             "INTERVAL" => interval = v.parse().unwrap_or(1),
             "COUNT" => count = v.parse().ok(),
             "UNTIL" => {
-                until = v
-                    .get(..10)
-                    .and_then(|p| NaiveDate::parse_from_str(p, "%Y-%m-%d").ok())
-                    .or_else(|| NaiveDate::parse_from_str(v, "%Y%m%d").ok());
+                until = v.parse::<DateTime<Utc>>().ok().or_else(|| {
+                    v.get(..10)
+                        .and_then(|p| NaiveDate::parse_from_str(p, "%Y-%m-%d").ok())
+                        .or_else(|| NaiveDate::parse_from_str(v, "%Y%m%d").ok())
+                        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc())
+                });
             }
             _ => {}
         }
