@@ -3,15 +3,14 @@ import { useTranslation } from "react-i18next";
 import { format } from "date-fns";
 import type { Lesson, LessonInput, LessonStudentInput, RecurrenceEditScope } from "@/types/lesson";
 import { lessonToInput } from "@/types/lesson";
-import type { Student } from "@/types/student";
 import { studentToInput } from "@/types/student";
 import { api } from "@/lib/api";
 import { CURRENCIES } from "@/lib/money";
 import { formatTimeInTimezone } from "@/lib/contacts";
 import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, withUntil, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
 import { hrefFor, textHasLinks } from "@/lib/linkify";
-import { queryClient } from "@/lib/queryClient";
-import { invalidateAppData } from "@/lib/queryKeys";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keys, invalidateAppData } from "@/lib/queryKeys";
 import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
@@ -67,7 +66,13 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       timezone: s.timezone,
     })),
   );
-  const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const queryClient = useQueryClient();
+  const studentsQuery = useQuery({
+    queryKey: keys.students.all(false),
+    queryFn: () => api.getStudents(false),
+    enabled: open,
+  });
+  const allStudents = studentsQuery.data ?? [];
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [studentCosts, setStudentCosts] = useState<Record<string, { cost: string; currency: string }>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -125,11 +130,6 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
         time: formatTimeInTimezone(startAtIso, s.timezone!),
       }));
   }, [selectedStudents, startAtIso, tutorTimezone]);
-
-  useEffect(() => {
-    if (!open) return;
-    void api.getStudents(false).then(setAllStudents);
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -946,12 +946,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
             tutorTimezone={tutorTimezone}
             onClose={() => setPickerOpen(false)}
             onConfirm={handlePickStudents}
-            onStudentCreated={(student) => {
-              setAllStudents((prev) =>
-                prev.some((s) => s.id === student.id)
-                  ? prev.map((s) => (s.id === student.id ? student : s))
-                  : [...prev, student].sort((a, b) => a.name.localeCompare(b.name)),
-              );
+            onStudentCreated={() => {
               void invalidateAppData(queryClient);
             }}
           />

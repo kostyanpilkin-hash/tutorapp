@@ -9,7 +9,6 @@ import type { Student } from "@/types/student";
 import { api } from "@/lib/api";
 import { keys, invalidateAppData } from "@/lib/queryKeys";
 import { applyTemplate, loadMessageTemplates } from "@/lib/messageTemplates";
-import type { MessageTemplate } from "@/lib/messageTemplates";
 import { messengerUrl } from "@/lib/contacts";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { lessonPaymentStatus, setLessonPaid, setLessonStatus } from "@/lib/lessonActions";
@@ -91,8 +90,13 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [historyLimit, setHistoryLimit] = useState(HISTORY_STEP);
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
-  const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("__none__");
+  const templatesQuery = useQuery({
+    queryKey: keys.messageTemplates(),
+    queryFn: () => loadMessageTemplates(),
+    enabled: messageDialogOpen,
+  });
+  const messageTemplates = templatesQuery.data ?? [];
   const [historyWindow] = useState(() => {
     const now = new Date();
     return { from: startOfDay(subYears(now, 2)), to: endOfDay(addMonths(now, 2)) };
@@ -225,13 +229,6 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
     await api.archiveStudent(selected.id, !selected.archived);
     await invalidateAppData(queryClient);
   };
-
-  useEffect(() => {
-    if (!messageDialogOpen) return;
-    void loadMessageTemplates()
-      .then((templates) => setMessageTemplates(templates))
-      .catch(() => setMessageTemplates([]));
-  }, [messageDialogOpen]);
 
   const openMessageDialog = () => {
     setSelectedTemplateId("__none__");

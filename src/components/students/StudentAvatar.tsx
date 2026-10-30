@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { keys } from "@/lib/queryKeys";
 
 interface Props {
   photoPath?: string | null;
@@ -11,23 +12,12 @@ interface Props {
 }
 
 export function StudentAvatar({ photoPath, name, color, className, textClassName }: Props) {
-  const [src, setSrc] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!photoPath) {
-      setSrc(null);
-      return;
-    }
-    let cancelled = false;
-    void api.getStudentPhotoDataUrl(photoPath).then((url) => {
-      if (!cancelled) setSrc(url);
-    }).catch(() => {
-      if (!cancelled) setSrc(null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [photoPath]);
+  const photoQuery = useQuery({
+    queryKey: keys.students.photo(photoPath ?? ""),
+    queryFn: () => api.getStudentPhotoDataUrl(photoPath!),
+    enabled: !!photoPath,
+  });
+  const src = photoPath ? (photoQuery.data ?? null) : null;
 
   const initials = name.slice(0, 2).toUpperCase() || "?";
 

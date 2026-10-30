@@ -68,7 +68,12 @@ export default function App() {
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [createDate, setCreateDate] = useState<Date | undefined>();
   const [createStudentIds, setCreateStudentIds] = useState<string[] | undefined>();
-  const [studentCount, setStudentCount] = useState<number | null>(null);
+  const studentCountQuery = useQuery({
+    queryKey: keys.students.all(false),
+    queryFn: () => api.getStudents(false),
+    enabled: loaded && !onboardingDone,
+  });
+  const studentCount = studentCountQuery.data?.length ?? null;
 
   const dayBounds = todayBoundsInTimezone(timezone, todayDate);
   const dayQuery = useQuery({
@@ -102,11 +107,6 @@ export default function App() {
   useEffect(() => {
     void load().then(() => i18n.changeLanguage(language));
   }, [load, language]);
-
-  useEffect(() => {
-    if (!loaded || onboardingDone) return;
-    void api.getStudents(false).then((s) => setStudentCount(s.length)).catch(() => setStudentCount(0));
-  }, [loaded, onboardingDone]);
 
   useEffect(() => {
     const unlisten = listen<{ link?: string; title?: string; body?: string }>("lesson-reminder", (event) => {

@@ -15,7 +15,9 @@ export const keys = {
     lessons: (id: string) => ["students", "lessons", id] as const,
     expanded: (id: string, fromISO: string, toISO: string) =>
       ["students", "expanded", id, fromISO, toISO] as const,
+    photo: (path: string) => ["students", "photo", path] as const,
   },
+  messageTemplates: () => ["settings", "message_templates"] as const,
   finance: {
     report: (period: string, anchorISO: string, customFromISO?: string, customToISO?: string) =>
       ["finance", "report", period, anchorISO, customFromISO ?? "", customToISO ?? ""] as const,
