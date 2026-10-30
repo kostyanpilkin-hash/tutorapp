@@ -6,6 +6,7 @@ import type { Lesson } from "@/types/lesson";
 import type { FiredReminderEntry } from "@/lib/api";
 import { api } from "@/lib/api";
 import { loadExpandedLessons } from "@/lib/recurrence";
+import { useShallow } from "zustand/react/shallow";
 import { useToastStore } from "@/stores/toastStore";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -69,7 +70,9 @@ function buildUpcomingReminders(
 export function RemindersPanel() {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
-  const toast = useToastStore();
+  const toast = useToastStore(
+    useShallow((s) => ({ error: s.error, info: s.info, success: s.success })),
+  );
   const [activeTab, setActiveTab] = useState<"upcoming" | "journal">("upcoming");
   const [upcoming, setUpcoming] = useState<UpcomingReminderEntry[]>([]);
   const [journal, setJournal] = useState<FiredReminderEntry[]>([]);

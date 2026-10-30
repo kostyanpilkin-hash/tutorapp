@@ -14,9 +14,9 @@
 
 Убрать `refreshKey`/ручные reload-пропсы: `useQuery` + инвалидация по ключам (`["lessons", range]`, `["students"]`). Начать с StudentsPanel/FinancePanel. Риск: рефактор каждой панели отдельно.
 
-## 4. Узкие селекторы Zustand + memo
+## 4. Узкие селекторы Zustand + memo — ✅ выполнено (2026-10-30)
 
-`useSettingsStore()` без селектора ре-рендерит всё. *** по `useXStore(s => s)` → узкие селекторы / `useShallow`.
+Все `useXStore()` без селектора сужены: App (settings+lessons через `useShallow`), SettingsPanel, LessonFormDialog, CalendarViews/StudentsPanel (`s => s.timezone`), toast в 3 панелях (`useShallow` методов). Reschedule-диалоги не тронуты — используют все поля.
 
 ## 5. Далее (крупное)
 

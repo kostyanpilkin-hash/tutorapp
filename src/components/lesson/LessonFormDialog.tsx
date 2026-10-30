@@ -10,6 +10,7 @@ import { CURRENCIES } from "@/lib/money";
 import { formatTimeInTimezone } from "@/lib/contacts";
 import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, withUntil, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
 import { hrefFor, textHasLinks } from "@/lib/linkify";
+import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { Button } from "@/components/ui/button";
@@ -57,7 +58,13 @@ interface Props {
 
 export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds, onClose, onSaved }: Props) {
   const { t } = useTranslation();
-  const { defaultDuration, defaultReminders, timezone: tutorTimezone } = useSettingsStore();
+  const { defaultDuration, defaultReminders, timezone: tutorTimezone } = useSettingsStore(
+    useShallow((s) => ({
+      defaultDuration: s.defaultDuration,
+      defaultReminders: s.defaultReminders,
+      timezone: s.timezone,
+    })),
+  );
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [studentCosts, setStudentCosts] = useState<Record<string, { cost: string; currency: string }>>({});

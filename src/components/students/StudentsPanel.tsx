@@ -11,6 +11,7 @@ import type { MessageTemplate } from "@/lib/messageTemplates";
 import { messengerUrl } from "@/lib/contacts";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { lessonPaymentStatus, setLessonPaid, setLessonStatus } from "@/lib/lessonActions";
+import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { Button } from "@/components/ui/button";
@@ -76,8 +77,10 @@ function AmountBlock({
 export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, refreshKey = 0 }: Props) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
-  const { timezone: tutorTimezone } = useSettingsStore();
-  const toast = useToastStore();
+  const tutorTimezone = useSettingsStore((s) => s.timezone);
+  const toast = useToastStore(
+    useShallow((s) => ({ error: s.error, info: s.info, success: s.success })),
+  );
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);

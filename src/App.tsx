@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { addDays, addMonths, format, subDays, subMonths } from "date-fns";
 import { Bell, Calendar, ChevronLeft, ChevronRight, History, Plus, Settings, Users, Wallet } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useLessonStore } from "@/stores/lessonStore";
 import { useToastStore } from "@/stores/toastStore";
@@ -43,8 +44,30 @@ export default function App() {
     language,
     onboardingDone,
     setOnboardingDone,
-  } = useSettingsStore();
-  const { expanded, todayLessons, todayLoading, loading, fetchRange, fetchDay, refresh } = useLessonStore();
+  } = useSettingsStore(
+    useShallow((s) => ({
+      view: s.view,
+      anchorDate: s.anchorDate,
+      setView: s.setView,
+      setAnchorDate: s.setAnchorDate,
+      load: s.load,
+      loaded: s.loaded,
+      language: s.language,
+      onboardingDone: s.onboardingDone,
+      setOnboardingDone: s.setOnboardingDone,
+    })),
+  );
+  const { expanded, todayLessons, todayLoading, loading, fetchRange, fetchDay, refresh } = useLessonStore(
+    useShallow((s) => ({
+      expanded: s.expanded,
+      todayLessons: s.todayLessons,
+      todayLoading: s.todayLoading,
+      loading: s.loading,
+      fetchRange: s.fetchRange,
+      fetchDay: s.fetchDay,
+      refresh: s.refresh,
+    })),
+  );
   const [page, setPage] = useState<Page>("home");
   const [todayDate, setTodayDate] = useState(() => new Date());
   const [formOpen, setFormOpen] = useState(false);

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { BookOpen } from "lucide-react";
 import QRCode from "qrcode";
+import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { api } from "@/lib/api";
 import type { MessageTemplate } from "@/lib/messageTemplates";
@@ -53,8 +54,24 @@ export function SettingsPanel() {
     setDefaultCalendarView,
     setDefaultDuration,
     setDefaultReminders,
-  } = useSettingsStore();
-  const toast = useToastStore();
+  } = useSettingsStore(
+    useShallow((s) => ({
+      language: s.language,
+      theme: s.theme,
+      timezone: s.timezone,
+      defaultDuration: s.defaultDuration,
+      defaultReminders: s.defaultReminders,
+      defaultCalendarView: s.defaultCalendarView,
+      setLanguage: s.setLanguage,
+      setTimezone: s.setTimezone,
+      setDefaultCalendarView: s.setDefaultCalendarView,
+      setDefaultDuration: s.setDefaultDuration,
+      setDefaultReminders: s.setDefaultReminders,
+    })),
+  );
+  const toast = useToastStore(
+    useShallow((s) => ({ error: s.error, info: s.info, success: s.success })),
+  );
   const [autostart, setAutostart] = useState(false);
   const [dbPath, setDbPath] = useState("");
   const [durationDraft, setDurationDraft] = useState(String(defaultDuration));

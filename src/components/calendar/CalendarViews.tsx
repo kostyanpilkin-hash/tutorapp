@@ -603,7 +603,7 @@ export function AgendaView({
 }: Pick<Props, "lessons" | "onSelect"> & { onChanged?: () => void }) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
-  const { timezone: tutorTimezone } = useSettingsStore();
+  const tutorTimezone = useSettingsStore((s) => s.timezone);
   const { show } = useLessonContextMenu({
     onOpen: onSelect,
     onChanged: onChanged ?? (() => undefined),
