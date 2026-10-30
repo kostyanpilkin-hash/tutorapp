@@ -2,9 +2,9 @@
 
 Порядок по эффекту/риску. Каждая волна — отдельный коммит и, при желании, отдельный тред.
 
-## 1. Разбивка lessons.rs (~Nстрок)
+## 1. Разбивка lessons.rs (~Nстрок) — ✅ выполнено (2026-10-30)
 
-Выделить: `lessons/repo.rs` (SQL+row_to_lesson+loaders), `lessons/archive.rs` (archive/restore/dedupe), `lessons/overlaps.rs`, `activity_log.rs` (log_activity — сейчас импортируется из students/finance). Чистая перестановка, поведение не меняется. Проверка: cargo check/test.
+`commands/lessons.rs` (команды + тесты, ~Nстрок) + подмодули `commands/lessons/`: `repo.rs` (SQL+row_to_lesson+loaders), `archive.rs` (archive/restore/dedupe + delete_series_from_instance), `overlaps.rs`, `activity_log.rs` (log_activity). Внешние пути сохранены ре-экспортами — потребители не тронуты.
 
 ## 2. Виртуализация длинных списков
 
