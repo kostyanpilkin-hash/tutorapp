@@ -1,16 +1,20 @@
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use validator::Validate;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct Reminder {
     pub id: String,
     pub lesson_id: String,
+    #[ts(type = "number")]
     pub minutes_before: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct LessonStudent {
     pub student_id: String,
     pub name: String,
@@ -23,13 +27,15 @@ pub struct LessonStudent {
     pub lesson_note: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct Lesson {
     pub id: String,
     pub student_name: String,
     pub subject: String,
     pub start_at: String,
+    #[ts(type = "number")]
     pub duration_minutes: i64,
     pub cost: Option<f64>,
     pub currency: Option<String>,
@@ -49,8 +55,9 @@ pub struct Lesson {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct LessonStudentInput {
     #[validate(length(min = 1))]
     pub student_id: String,
@@ -59,14 +66,16 @@ pub struct LessonStudentInput {
     pub payment_status: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct LessonInput {
     #[validate(length(max = 100))]
     pub subject: String,
     #[validate(length(min = 1))]
     pub start_at: String,
     #[validate(range(min = 15, max = 240))]
+    #[ts(type = "number")]
     pub duration_minutes: i64,
     pub cost: Option<f64>,
     pub currency: Option<String>,
@@ -84,6 +93,7 @@ pub struct LessonInput {
     pub color: Option<String>,
     #[validate(length(min = 1, message = "Выберите хотя бы одного ученика"))]
     pub students: Vec<LessonStudentInput>,
+    #[ts(type = "Array<number>")]
     pub reminders: Vec<i64>,
     #[serde(default)]
     pub force: bool,
@@ -101,17 +111,20 @@ fn validate_payment_status(s: &str) -> Result<(), validator::ValidationError> {
         .ok_or_else(|| validator::ValidationError::new("invalid_payment_status"))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct OverlapInfo {
     pub id: String,
     pub student_name: String,
     pub start_at: String,
+    #[ts(type = "number")]
     pub duration_minutes: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct Student {
     pub id: String,
     pub name: String,
@@ -130,17 +143,20 @@ pub struct Student {
     pub default_cost: Option<f64>,
     pub default_currency: Option<String>,
     pub default_link: Option<String>,
+    #[ts(type = "number | null")]
     pub default_duration: Option<i64>,
     pub color: Option<String>,
     pub photo_path: Option<String>,
+    #[ts(type = "number")]
     pub paid_lessons: i64,
     pub archived: bool,
     pub created_at: String,
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Validate)]
+#[derive(Debug, Clone, Serialize, Deserialize, Validate, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct StudentInput {
     #[validate(length(min = 1, max = 100))]
     pub name: String,
@@ -161,21 +177,25 @@ pub struct StudentInput {
     pub default_currency: Option<String>,
     pub default_link: Option<String>,
     #[validate(range(min = 15, max = 240))]
+    #[ts(type = "number | null")]
     pub default_duration: Option<i64>,
     pub color: Option<String>,
     #[serde(default)]
+    #[ts(type = "number")]
     pub paid_lessons: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct CurrencyAmount {
     pub currency: String,
     pub amount: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct SubjectAmount {
     pub subject: String,
     pub currency: String,
@@ -184,8 +204,9 @@ pub struct SubjectAmount {
     pub expected: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct TimelinePoint {
     pub label: String,
     pub earned: f64,
@@ -194,8 +215,9 @@ pub struct TimelinePoint {
     pub currency: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct FinanceReport {
     pub period: String,
     pub from: String,
@@ -207,16 +229,18 @@ pub struct FinanceReport {
     pub timeline: Vec<TimelinePoint>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct StudentFinance {
     pub earned: Vec<CurrencyAmount>,
     pub debt: Vec<CurrencyAmount>,
     pub expected: Vec<CurrencyAmount>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct StudentSettingsLog {
     pub id: String,
     pub student_id: String,
@@ -226,8 +250,9 @@ pub struct StudentSettingsLog {
     pub changed_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct ActivityLogEntry {
     pub id: String,
     pub category: String,
@@ -241,8 +266,9 @@ pub struct ActivityLogEntry {
     pub created_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct DebtEntry {
     pub lesson_id: String,
     pub student_id: String,

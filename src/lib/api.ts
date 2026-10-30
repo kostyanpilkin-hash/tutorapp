@@ -1,19 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Lesson, LessonInput, OverlapInfo, FinanceReport } from "@/types/lesson";
 import type { Student, StudentFinance, StudentInput, StudentSettingsLog, DebtEntry, ActivityLogEntry } from "@/types/student";
+import type { FiredReminderEntry, TgStatus, TgConnectResult } from "@/types/generated";
 import { useToastStore } from "@/stores/toastStore";
 import { queryClient } from "@/lib/queryClient";
 import { keys } from "@/lib/queryKeys";
 
-export interface FiredReminderEntry {
-  lessonId: string;
-  instanceStart: string;
-  minutesBefore: number;
-  firedAt?: string | null;
-  studentName: string;
-  subject: string;
-  link?: string | null;
-}
+export type { FiredReminderEntry };
 
 function errMessage(e: unknown): string {
   if (typeof e === "string") return e;
@@ -177,12 +170,9 @@ export const api = {
   getPhoneLink: () => call(() => invoke<string | null>("get_phone_link")),
   getPhoneLinks: () => call(() => invoke<string[]>("get_phone_links")),
 
-  tgStatus: () =>
-    call(() =>
-      invoke<{ tokenSet: boolean; linked: boolean; chatId: number | null; pairingCode: string | null; lastError: string | null }>("tg_status"),
-    ),
+  tgStatus: () => call(() => invoke<TgStatus>("tg_status")),
   tgConnect: (token: string) =>
-    call(() => invoke<{ username: string; code: string }>("tg_connect", { token })),
+    call(() => invoke<TgConnectResult>("tg_connect", { token })),
   tgDisconnect: () => call(() => invoke<void>("tg_disconnect")),
   tgTest: () => call(() => invoke<void>("tg_test")),
   resetPhoneKey: () => call(() => invoke<void>("reset_phone_key")),

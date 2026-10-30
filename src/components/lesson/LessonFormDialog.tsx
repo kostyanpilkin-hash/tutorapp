@@ -172,7 +172,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       setMaterials(lesson.materials || "");
       setMaterialsLink(lesson.materialsLink || "");
       setStatus(lesson.status);
-      setPaymentStatus(lesson.paymentStatus || "unpaid");
+      setPaymentStatus((lesson.paymentStatus || "unpaid") as PaymentStatus);
       setRecurrence(lesson.recurrenceRule ? "weekly" : "none");
       if (lesson.recurrenceRule) {
         const days = parseByday(lesson.recurrenceRule);
@@ -284,9 +284,10 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
           studentId: id,
           cost: sc.cost ? Number(sc.cost) : null,
           currency: sc.cost ? (sc.currency as LessonStudentInput["currency"]) : null,
+          paymentStatus: null,
         };
       }
-      return { studentId: id };
+      return { studentId: id, cost: null, currency: null, paymentStatus: null };
     });
 
   const buildRecurrenceRule = (): string | null => {
@@ -326,6 +327,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       color: lesson?.color || null,
       students: buildStudentsInput(),
       reminders: reminderValues,
+      force: false,
     };
   };
 

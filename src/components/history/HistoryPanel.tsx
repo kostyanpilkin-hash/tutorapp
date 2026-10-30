@@ -93,7 +93,7 @@ export function HistoryPanel() {
     getItemKey: (index) => entries[index].id,
   });
 
-  const fmtValue = (v: string | undefined, field?: string): string => {
+  const fmtValue = (v: string | null | undefined, field?: string | null): string => {
     if (!v) return "—";
     if (field === "start_at") return fmtShortDate(v, i18n.language);
     if (field === "status") return t(`history.status.${v}`, { defaultValue: v });

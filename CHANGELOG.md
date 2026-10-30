@@ -2,6 +2,14 @@
 
 Все значимые изменения проекта TutorApp. Даты — по коммитам.
 
+## 2026-10-30 (вечер, 15)
+
+### TS-типы IPC генерируются из Rust-моделей (ts-rs)
+- На 19 IPC-структурах (`models/mod.rs`, `TgStatus`, `TgConnectResult`, `FiredReminderEntry`) — `#[derive(TS)]` + `#[ts(export)]`; `cargo test` регенерирует `src/types/bindings/*.ts` (19 файлов) и ловит дрифт на этапе сборки
+- `src/types/generated.ts` — barrel; `types/lesson.ts` и `types/student.ts` теперь реэкспортируют сгенерированные типы, сохранив доменные юнионы (`LessonStatus`, `PaymentStatus`, `Currency`, `Theme`) и хелперы; `api.ts` использует `TgStatus`/`TgConnectResult`/`FiredReminderEntry` вместо инлайн-типов
+- `i64` → `number` через `#[ts(type = "...")]` (bigint бы ломал JSON-контракт); `Option<T>` → `T | null` — места, ожидавшие `undefined`, расширены до `null`-совместимых
+- Файлы биндингов закоммичены — дрифт моделей виден в git diff
+
 ## 2026-10-30 (вечер, 14)
 
 ### Телефонная страница работает офлайн

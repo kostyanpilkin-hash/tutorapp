@@ -1,3 +1,19 @@
+// IPC types are generated from Rust models via ts-rs (src/types/bindings).
+// Domain unions and helpers stay here.
+import type { Lesson, LessonInput } from "./generated";
+export type {
+  Reminder,
+  LessonStudent,
+  Lesson,
+  LessonStudentInput,
+  LessonInput,
+  OverlapInfo,
+  CurrencyAmount,
+  SubjectAmount,
+  TimelinePoint,
+  FinanceReport,
+} from "./generated";
+
 export type LessonStatus = "scheduled" | "completed" | "cancelled" | "no_show";
 export type PaymentStatus = "unpaid" | "paid";
 export type Currency = "USD" | "BYN" | "RUB" | "EUR";
@@ -33,75 +49,6 @@ export type Theme =
   | "mica";
 export type FinancePeriod = "day" | "week" | "month" | "year" | "custom";
 
-export interface Reminder {
-  id: string;
-  lessonId: string;
-  minutesBefore: number;
-}
-
-export interface LessonStudent {
-  studentId: string;
-  name: string;
-  cost?: number | null;
-  currency?: Currency | null;
-  paymentStatus: PaymentStatus;
-  color?: string | null;
-  timezone?: string | null;
-  lessonNote: string;
-}
-
-export interface Lesson {
-  id: string;
-  studentName: string;
-  subject: string;
-  startAt: string;
-  durationMinutes: number;
-  cost?: number | null;
-  currency?: Currency | null;
-  link?: string | null;
-  notes: string;
-  materials: string;
-  materialsLink?: string | null;
-  status: LessonStatus;
-  paymentStatus: PaymentStatus;
-  recurrenceRule?: string | null;
-  recurrenceParentId?: string | null;
-  recurrenceInstanceDate?: string | null;
-  color?: string | null;
-  students: LessonStudent[];
-  reminders: Reminder[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface LessonStudentInput {
-  studentId: string;
-  cost?: number | null;
-  currency?: Currency | null;
-  paymentStatus?: PaymentStatus | null;
-}
-
-export interface LessonInput {
-  subject: string;
-  startAt: string;
-  durationMinutes: number;
-  cost?: number | null;
-  currency?: Currency | null;
-  link?: string | null;
-  notes: string;
-  materials: string;
-  materialsLink?: string | null;
-  status: LessonStatus;
-  paymentStatus: PaymentStatus;
-  recurrenceRule?: string | null;
-  recurrenceParentId?: string | null;
-  recurrenceInstanceDate?: string | null;
-  color?: string | null;
-  students: LessonStudentInput[];
-  reminders: number[];
-  force?: boolean;
-}
-
 export function lessonToInput(lesson: Lesson): LessonInput {
   return {
     subject: lesson.subject,
@@ -126,49 +73,11 @@ export function lessonToInput(lesson: Lesson): LessonInput {
       paymentStatus: s.paymentStatus,
     })),
     reminders: lesson.reminders.map((r) => r.minutesBefore),
+    force: false,
   };
 }
 
-export interface OverlapInfo {
-  id: string;
-  studentName: string;
-  startAt: string;
-  durationMinutes: number;
-}
-
 export type RecurrenceEditScope = "this" | "thisAndFuture" | "all";
-
-export interface CurrencyAmount {
-  currency: string;
-  amount: number;
-}
-
-export interface SubjectAmount {
-  subject: string;
-  currency: string;
-  earned: number;
-  debt: number;
-  expected: number;
-}
-
-export interface TimelinePoint {
-  label: string;
-  earned: number;
-  debt: number;
-  expected: number;
-  currency: string;
-}
-
-export interface FinanceReport {
-  period: string;
-  from: string;
-  to: string;
-  earned: CurrencyAmount[];
-  debt: CurrencyAmount[];
-  expected: CurrencyAmount[];
-  bySubject: SubjectAmount[];
-  timeline: TimelinePoint[];
-}
 
 export function lessonDisplayColor(lesson: Lesson): string | undefined {
   if (lesson.students.length > 0) {

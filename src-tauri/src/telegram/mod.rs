@@ -8,6 +8,7 @@ use crate::occurrences;
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 use std::sync::atomic::{AtomicU64, Ordering};
 use chrono::Timelike;
 
@@ -50,11 +51,13 @@ fn quiet_now(tz: chrono_tz::Tz) -> bool {
 
 // ---------- Tauri commands ----------
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct TgStatus {
     token_set: bool,
     linked: bool,
+    #[ts(type = "number | null")]
     chat_id: Option<i64>,
     pairing_code: Option<String>,
     last_error: Option<String>,
@@ -78,8 +81,9 @@ pub fn tg_status(state: tauri::State<AppState>) -> Result<TgStatus, String> {
 
 /// Saves the bot token, validates it against Telegram, (re)starts the bot and
 /// returns a pairing code for /start.
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct TgConnectResult {
     username: String,
     code: String,

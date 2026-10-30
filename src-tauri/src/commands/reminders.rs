@@ -2,11 +2,13 @@ use crate::db::AppState;
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::params;
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/types/bindings/")]
 pub struct FiredReminderEntry {
     lesson_id: String,
     instance_start: String,
+    #[ts(type = "number")]
     minutes_before: i64,
     fired_at: Option<String>,
     student_name: String,

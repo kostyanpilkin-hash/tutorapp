@@ -56,6 +56,18 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     name: "",
     notes: "",
     lessonNote: "",
+    email: null,
+    phone: null,
+    messenger: null,
+    parents: null,
+    parentName: null,
+    parentPhone: null,
+    parentMessenger: null,
+    birthDate: null,
+    timezone: null,
+    defaultCost: null,
+    defaultLink: null,
+    color: null,
     defaultDuration: 60,
     defaultCurrency: "USD",
     paidLessons: 0,
@@ -93,7 +105,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
       setPreviousCurrency(student.defaultCurrency || "USD");
       setPreviousLink(student.defaultLink ?? null);
     } else {
-      setForm({ name: "", notes: "", lessonNote: "", defaultDuration: 60, defaultCurrency: "USD", paidLessons: 0 });
+      setForm({ name: "", notes: "", lessonNote: "", email: null, phone: null, messenger: null, parents: null, parentName: null, parentPhone: null, parentMessenger: null, birthDate: null, timezone: null, defaultCost: null, defaultLink: null, color: null, defaultDuration: 60, defaultCurrency: "USD", paidLessons: 0 });
       setPhotoPath(null);
       setCreatedId(null);
       setPreviousCurrency("USD");

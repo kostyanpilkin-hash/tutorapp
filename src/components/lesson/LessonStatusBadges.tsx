@@ -28,7 +28,8 @@ export function LessonStatusBadges({ lesson, size = "sm", className }: Props) {
   const { t } = useTranslation();
   const iconSize = size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5";
   const payment = lessonPaymentStatus(lesson);
-  const StatusIcon = STATUS_ICON[lesson.status];
+  const statusKey = lesson.status as LessonStatus;
+  const StatusIcon = STATUS_ICON[statusKey];
   const PaymentIcon = payment === "paid" ? CircleDollarSign : Wallet;
 
   return (
@@ -41,7 +42,7 @@ export function LessonStatusBadges({ lesson, size = "sm", className }: Props) {
       </span>
       <span title={t(`status.${lesson.status}`)}>
         <StatusIcon
-          className={cn(iconSize, STATUS_CLASS[lesson.status])}
+          className={cn(iconSize, STATUS_CLASS[statusKey])}
           aria-label={t(`status.${lesson.status}`)}
         />
       </span>

@@ -18,7 +18,7 @@ import { queryClient } from "@/lib/queryClient";
 import { invalidateAppData } from "@/lib/queryKeys";
 
 export function lessonPaymentStatus(lesson: Lesson): PaymentStatus {
-  if (lesson.students.length === 0) return lesson.paymentStatus;
+  if (lesson.students.length === 0) return lesson.paymentStatus as PaymentStatus;
   return lesson.students.every((s) => s.paymentStatus === "paid") ? "paid" : "unpaid";
 }
 
