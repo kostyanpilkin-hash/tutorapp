@@ -242,6 +242,16 @@ const en = {
     backupCancelled: "Backup cancelled",
     shortcut: "Desktop shortcut",
     shortcutDone: "Shortcut created",
+    sections: {
+      general: "General",
+      appearance: "Appearance",
+      lessons: "Lessons",
+      reminders: "Reminders",
+      templates: "Templates",
+      integrations: "Integrations",
+      data: "Data",
+      help: "Help",
+    },
     themes: {
       light: "Light",
       dark: "Dark",

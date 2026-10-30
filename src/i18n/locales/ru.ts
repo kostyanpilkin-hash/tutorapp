@@ -242,6 +242,16 @@ const ru = {
     backupCancelled: "Сохранение отменено",
     shortcut: "Ярлык на рабочий стол",
     shortcutDone: "Ярлык создан",
+    sections: {
+      general: "Общее",
+      appearance: "Внешний вид",
+      lessons: "Занятия",
+      reminders: "Напоминания",
+      templates: "Шаблоны",
+      integrations: "Интеграции",
+      data: "Данные",
+      help: "Справка",
+    },
     themes: {
       light: "Светлая",
       dark: "Тёмная",

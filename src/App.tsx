@@ -356,7 +356,7 @@ export default function App() {
           )}
 
           {page === "settings" && (
-            <div className="mx-auto w-full max-w-lg">
+            <div className="mx-auto w-full max-w-4xl">
               <SettingsPanel />
             </div>
           )}

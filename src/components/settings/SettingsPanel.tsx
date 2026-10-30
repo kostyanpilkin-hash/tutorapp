@@ -1,7 +1,16 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { BookOpen } from "lucide-react";
+import {
+  Bell,
+  Blocks,
+  BookOpen,
+  Database,
+  GraduationCap,
+  MessageSquare,
+  Palette,
+  SlidersHorizontal,
+} from "lucide-react";
 import QRCode from "qrcode";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
@@ -32,6 +41,19 @@ import { COMMON_TIMEZONES, getTimezoneOffset } from "@/lib/contacts";
 import { ThemePreview } from "@/components/settings/ThemePreview";
 import { ThemePickerDialog } from "@/components/settings/ThemePickerDialog";
 import i18n from "@/i18n";
+
+const SECTIONS = [
+  { id: "general", icon: SlidersHorizontal },
+  { id: "appearance", icon: Palette },
+  { id: "lessons", icon: GraduationCap },
+  { id: "reminders", icon: Bell },
+  { id: "templates", icon: MessageSquare },
+  { id: "integrations", icon: Blocks },
+  { id: "data", icon: Database },
+  { id: "help", icon: BookOpen },
+] as const;
+
+type SettingsSection = (typeof SECTIONS)[number]["id"];
 
 const REMINDER_OPTIONS = [
   { value: 1440, key: "reminder.dayBefore" },
@@ -86,6 +108,7 @@ export function SettingsPanel() {
   );
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [busy, setBusy] = useState(false);
+  const [section, setSection] = useState<SettingsSection>("general");
   const [helpOpen, setHelpOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const phoneQuery = useQuery({
@@ -276,261 +299,305 @@ export function SettingsPanel() {
     toast.success(t("settings.pathCopied"));
   };
 
-  return (
-    <div className="space-y-4 rounded-xl border border-border bg-card p-4">
-      <h2 className="text-lg font-semibold">{t("app.settings")}</h2>
-      <div className="grid gap-3">
+  const generalSection = (
+    <>
+      <div>
+        <Label>{t("settings.language")}</Label>
+        <Select value={language} onValueChange={(v) => void changeLang(v)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ru">Русский</SelectItem>
+            <SelectItem value="en">English</SelectItem>
+            <SelectItem value="be">Беларуская</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>{t("settings.timezone")}</Label>
+        <Select value={timezone} onValueChange={(v) => void setTimezone(v)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {COMMON_TIMEZONES.map((tz) => (
+              <SelectItem key={tz} value={tz}>{tz} ({getTimezoneOffset(tz)})</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>{t("settings.defaultCalendarView")}</Label>
+        <Select value={defaultCalendarView} onValueChange={(v) => void setDefaultCalendarView(v as CalendarView)}>
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="week">{t("views.week")}</SelectItem>
+            <SelectItem value="month">{t("views.month")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Button variant="outline" onClick={() => void toggleAutostart()}>
+        {t("settings.autostart")}: {autostart ? t("settings.on") : t("settings.off")}
+      </Button>
+    </>
+  );
+
+  const appearanceSection = (
+    <div>
+      <Label>{t("settings.theme")}</Label>
+      <div className="flex items-center gap-3">
+        <ThemePreview theme={theme} className="w-28" />
+        <span className="text-sm font-medium">{t(`settings.themes.${theme}`)}</span>
+        <Button
+          type="button"
+          variant="outline"
+          className="ml-auto"
+          onClick={() => setThemePickerOpen(true)}
+        >
+          {t("settings.chooseTheme")}
+        </Button>
+      </div>
+      <ThemePickerDialog open={themePickerOpen} onClose={() => setThemePickerOpen(false)} />
+    </div>
+  );
+
+  const lessonsSection = (
+    <div className="rounded-lg border border-border p-3 space-y-2">
+      <Label>{t("settings.defaultDuration")}</Label>
+      <div className="flex gap-2">
+        <Input
+          type="number"
+          min={15}
+          max={240}
+          value={durationDraft}
+          onChange={(e) => setDurationDraft(e.target.value)}
+        />
+        <Button variant="outline" onClick={() => void saveDuration()}>{t("settings.save")}</Button>
+      </div>
+      <p className="text-xs text-muted-foreground">{t("settings.durationHint")}</p>
+    </div>
+  );
+
+  const remindersSection = (
+    <div className="rounded-lg border border-border p-3 space-y-2">
+      <Label>{t("settings.defaultReminders")}</Label>
+      <div className="grid gap-2 md:grid-cols-3">
         <div>
-          <Label>{t("settings.language")}</Label>
-          <Select value={language} onValueChange={(v) => void changeLang(v)}>
+          <Label className="text-xs">{t("lesson.reminderFirst")}</Label>
+          <Select value={reminder1} onValueChange={setReminder1}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="ru">Русский</SelectItem>
-              <SelectItem value="en">English</SelectItem>
-              <SelectItem value="be">Беларуская</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label>{t("settings.theme")}</Label>
-          <div className="flex items-center gap-3">
-            <ThemePreview theme={theme} className="w-28" />
-            <span className="text-sm font-medium">{t(`settings.themes.${theme}`)}</span>
-            <Button
-              type="button"
-              variant="outline"
-              className="ml-auto"
-              onClick={() => setThemePickerOpen(true)}
-            >
-              {t("settings.chooseTheme")}
-            </Button>
-          </div>
-          <ThemePickerDialog open={themePickerOpen} onClose={() => setThemePickerOpen(false)} />
-        </div>
-        <div>
-          <Label>{t("settings.timezone")}</Label>
-          <Select value={timezone} onValueChange={(v) => void setTimezone(v)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {COMMON_TIMEZONES.map((tz) => (
-                <SelectItem key={tz} value={tz}>{tz} ({getTimezoneOffset(tz)})</SelectItem>
+              {REMINDER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
         <div>
-          <Label>{t("settings.defaultCalendarView")}</Label>
-          <Select value={defaultCalendarView} onValueChange={(v) => void setDefaultCalendarView(v as CalendarView)}>
+          <Label className="text-xs">{t("lesson.reminderSecond")}</Label>
+          <Select value={reminder2 || "__none__"} onValueChange={(v) => setReminder2(v === "__none__" ? "" : v)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="week">{t("views.week")}</SelectItem>
-              <SelectItem value="month">{t("views.month")}</SelectItem>
+              <SelectItem value="__none__">{t("settings.noSecondReminder")}</SelectItem>
+              {REMINDER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
-
-        <div className="rounded-lg border border-border p-3 space-y-2">
-          <Label>{t("settings.defaultDuration")}</Label>
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              min={15}
-              max={240}
-              value={durationDraft}
-              onChange={(e) => setDurationDraft(e.target.value)}
-            />
-            <Button variant="outline" onClick={() => void saveDuration()}>{t("settings.save")}</Button>
-          </div>
-          <p className="text-xs text-muted-foreground">{t("settings.durationHint")}</p>
+        <div>
+          <Label className="text-xs">{t("lesson.reminderThird")}</Label>
+          <Select value={reminder3 || "__none__"} onValueChange={(v) => setReminder3(v === "__none__" ? "" : v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">{t("settings.noThirdReminder")}</SelectItem>
+              {REMINDER_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
+      </div>
+      <Button variant="outline" onClick={() => void saveReminders()}>{t("settings.saveReminders")}</Button>
+    </div>
+  );
 
-        <div className="rounded-lg border border-border p-3 space-y-2">
-          <Label>{t("settings.defaultReminders")}</Label>
-          <div className="grid gap-2 md:grid-cols-3">
+  const templatesSection = (
+    <div className="rounded-lg border border-border p-3 space-y-3">
+      <div>
+        <Label>{t("settings.messageTemplates")}</Label>
+        <p className="mt-1 text-xs text-muted-foreground">{t("settings.messageTemplatesHint")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {t("settings.templateVariablesLabel")}: <code>{"{{name}}, {{parentName}}, {{link}}, {{subject}}, {{time}}"}</code>
+        </p>
+      </div>
+      <div className="space-y-3">
+        {templates.length === 0 && (
+          <p className="text-sm text-muted-foreground">{t("settings.templatesEmpty")}</p>
+        )}
+        {templates.map((template) => (
+          <div key={template.id} className="rounded-lg border border-border p-3 space-y-2">
             <div>
-              <Label className="text-xs">{t("lesson.reminderFirst")}</Label>
-              <Select value={reminder1} onValueChange={setReminder1}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {REMINDER_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">{t("settings.templateTitle")}</Label>
+              <Input
+                value={template.title}
+                onChange={(e) => updateTemplate(template.id, { title: e.target.value })}
+                placeholder={t("settings.templateTitlePlaceholder")}
+              />
             </div>
             <div>
-              <Label className="text-xs">{t("lesson.reminderSecond")}</Label>
-              <Select value={reminder2 || "__none__"} onValueChange={(v) => setReminder2(v === "__none__" ? "" : v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">{t("settings.noSecondReminder")}</SelectItem>
-                  {REMINDER_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">{t("settings.templateBody")}</Label>
+              <Textarea
+                value={template.body}
+                onChange={(e) => updateTemplate(template.id, { body: e.target.value })}
+                placeholder={t("settings.templateBodyPlaceholder")}
+                className="min-h-[120px]"
+              />
             </div>
-            <div>
-              <Label className="text-xs">{t("lesson.reminderThird")}</Label>
-              <Select value={reminder3 || "__none__"} onValueChange={(v) => setReminder3(v === "__none__" ? "" : v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">{t("settings.noThirdReminder")}</SelectItem>
-                  {REMINDER_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <Button variant="outline" onClick={() => void saveReminders()}>{t("settings.saveReminders")}</Button>
-        </div>
-
-        <div className="rounded-lg border border-border p-3 space-y-3">
-          <div>
-            <Label>{t("settings.messageTemplates")}</Label>
-            <p className="mt-1 text-xs text-muted-foreground">{t("settings.messageTemplatesHint")}</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("settings.templateVariablesLabel")}: <code>{"{{name}}, {{parentName}}, {{link}}, {{subject}}, {{time}}"}</code>
-            </p>
-          </div>
-          <div className="space-y-3">
-            {templates.length === 0 && (
-              <p className="text-sm text-muted-foreground">{t("settings.templatesEmpty")}</p>
-            )}
-            {templates.map((template) => (
-              <div key={template.id} className="rounded-lg border border-border p-3 space-y-2">
-                <div>
-                  <Label className="text-xs">{t("settings.templateTitle")}</Label>
-                  <Input
-                    value={template.title}
-                    onChange={(e) => updateTemplate(template.id, { title: e.target.value })}
-                    placeholder={t("settings.templateTitlePlaceholder")}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">{t("settings.templateBody")}</Label>
-                  <Textarea
-                    value={template.body}
-                    onChange={(e) => updateTemplate(template.id, { body: e.target.value })}
-                    placeholder={t("settings.templateBodyPlaceholder")}
-                    className="min-h-[120px]"
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <Button size="sm" variant="outline" onClick={() => removeTemplate(template.id)}>
-                    {t("settings.deleteTemplate")}
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={addTemplate}>{t("settings.addTemplate")}</Button>
-            <Button variant="outline" onClick={() => void saveTemplates()}>{t("settings.saveTemplates")}</Button>
-          </div>
-        </div>
-
-        <Button variant="outline" onClick={() => void toggleAutostart()}>
-          {t("settings.autostart")}: {autostart ? t("settings.on") : t("settings.off")}
-        </Button>
-
-        <div className="rounded-lg border border-border p-3 space-y-2">
-          <Label>{t("settings.data")}</Label>
-          <p className="break-all text-xs text-muted-foreground">{dbPath || "—"}</p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => void copyPath()} disabled={!dbPath}>
-              {t("settings.copyPath")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void doBackup()} disabled={busy}>
-              {t("settings.backup")}
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void api.createDesktopShortcut().then(() => toast.success(t("settings.shortcutDone")))}>
-              {t("settings.shortcut")}
-            </Button>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-border p-3 space-y-2">
-          <Label>{t("settings.phoneTitle")}</Label>
-          <p className="text-xs text-muted-foreground">{t("settings.phoneHint")}</p>
-          <Button variant="outline" onClick={() => void togglePhone()}>
-            {t("settings.phoneToggle")}: {phoneLink ? t("settings.on") : t("settings.off")}
-          </Button>
-          {phoneLink && (
-            <>
-              {phoneLinks.length > 1 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {phoneLinks.map((l, i) => (
-                    <button
-                      key={l}
-                      onClick={() => setPhoneIdx(i)}
-                      className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition ${
-                        i === phoneIdx ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
-                      }`}
-                    >
-                      {new URL(l).hostname}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <p className="break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">{phoneLink}</p>
-              {phoneQr && (
-                <div
-                  className="inline-block rounded-lg bg-white p-2 [&>svg]:h-40 [&>svg]:w-40"
-                  dangerouslySetInnerHTML={{ __html: phoneQr }}
-                />
-              )}
-              <p className="text-xs text-muted-foreground">{t("settings.phoneFirewall")}</p>
-              <Button variant="ghost" size="sm" onClick={() => void resetPhoneKey()}>
-                {t("settings.phoneResetKey")}
+            <div className="flex justify-end">
+              <Button size="sm" variant="outline" onClick={() => removeTemplate(template.id)}>
+                {t("settings.deleteTemplate")}
               </Button>
-            </>
-          )}
-        </div>
-
-        <div className="rounded-lg border border-border p-3 space-y-2">
-          <Label>{t("settings.tgTitle")}</Label>
-          <p className="text-xs text-muted-foreground">{t("settings.tgHint")}</p>
-          {!tgState?.linked ? (
-            <>
-              <div className="flex gap-2">
-                <Input
-                  type="password"
-                  placeholder="123456789:AAH…"
-                  value={tgToken}
-                  onChange={(e) => setTgToken(e.target.value)}
-                />
-                <Button variant="outline" disabled={tgBusy || !tgToken.trim()} onClick={() => void tgConnect()}>
-                  {t("settings.tgConnect")}
-                </Button>
-              </div>
-              {tgUsername && !tgState?.linked && (
-                <p className="text-xs text-muted-foreground">@{tgUsername}</p>
-              )}
-              {tgCode && !tgState?.linked && (
-                <div className="rounded bg-muted px-3 py-2 text-sm">
-                  {t("settings.tgCodeHint")}
-                  <span className="ml-2 font-mono text-xl font-bold tracking-widest">{tgCode}</span>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-sm text-emerald-500">✔ {t("settings.tgLinked")} @{tgUsername || "bot"}</p>
-              <div className="flex gap-2">
-                <Button variant="ghost" size="sm" onClick={() => void tgTest()}>{t("settings.tgTest")}</Button>
-                <Button variant="ghost" size="sm" onClick={() => void tgDisconnect()}>{t("settings.tgDisconnect")}</Button>
-              </div>
             </div>
-          )}
-          {tgError && <p className="text-xs text-red-500">{tgError}</p>}
-        </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={addTemplate}>{t("settings.addTemplate")}</Button>
+        <Button variant="outline" onClick={() => void saveTemplates()}>{t("settings.saveTemplates")}</Button>
+      </div>
+    </div>
+  );
 
-        <Button variant="outline" onClick={() => setHelpOpen(true)} className="w-full">
-          <BookOpen className="mr-2 h-4 w-4" />
-          {t("settings.help")}
+  const integrationsSection = (
+    <>
+      <div className="rounded-lg border border-border p-3 space-y-2">
+        <Label>{t("settings.phoneTitle")}</Label>
+        <p className="text-xs text-muted-foreground">{t("settings.phoneHint")}</p>
+        <Button variant="outline" onClick={() => void togglePhone()}>
+          {t("settings.phoneToggle")}: {phoneLink ? t("settings.on") : t("settings.off")}
         </Button>
+        {phoneLink && (
+          <>
+            {phoneLinks.length > 1 && (
+              <div className="flex flex-wrap gap-1.5">
+                {phoneLinks.map((l, i) => (
+                  <button
+                    key={l}
+                    onClick={() => setPhoneIdx(i)}
+                    className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition ${
+                      i === phoneIdx ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
+                    }`}
+                  >
+                    {new URL(l).hostname}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">{phoneLink}</p>
+            {phoneQr && (
+              <div
+                className="inline-block rounded-lg bg-white p-2 [&>svg]:h-40 [&>svg]:w-40"
+                dangerouslySetInnerHTML={{ __html: phoneQr }}
+              />
+            )}
+            <p className="text-xs text-muted-foreground">{t("settings.phoneFirewall")}</p>
+            <Button variant="ghost" size="sm" onClick={() => void resetPhoneKey()}>
+              {t("settings.phoneResetKey")}
+            </Button>
+          </>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-border p-3 space-y-2">
+        <Label>{t("settings.tgTitle")}</Label>
+        <p className="text-xs text-muted-foreground">{t("settings.tgHint")}</p>
+        {!tgState?.linked ? (
+          <>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                placeholder="123456789:AAH…"
+                value={tgToken}
+                onChange={(e) => setTgToken(e.target.value)}
+              />
+              <Button variant="outline" disabled={tgBusy || !tgToken.trim()} onClick={() => void tgConnect()}>
+                {t("settings.tgConnect")}
+              </Button>
+            </div>
+            {tgUsername && !tgState?.linked && (
+              <p className="text-xs text-muted-foreground">@{tgUsername}</p>
+            )}
+            {tgCode && !tgState?.linked && (
+              <div className="rounded bg-muted px-3 py-2 text-sm">
+                {t("settings.tgCodeHint")}
+                <span className="ml-2 font-mono text-xl font-bold tracking-widest">{tgCode}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-emerald-500">✔ {t("settings.tgLinked")} @{tgUsername || "bot"}</p>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => void tgTest()}>{t("settings.tgTest")}</Button>
+              <Button variant="ghost" size="sm" onClick={() => void tgDisconnect()}>{t("settings.tgDisconnect")}</Button>
+            </div>
+          </div>
+        )}
+        {tgError && <p className="text-xs text-red-500">{tgError}</p>}
+      </div>
+    </>
+  );
+
+  const dataSection = (
+    <div className="rounded-lg border border-border p-3 space-y-2">
+      <Label>{t("settings.data")}</Label>
+      <p className="break-all text-xs text-muted-foreground">{dbPath || "—"}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => void copyPath()} disabled={!dbPath}>
+          {t("settings.copyPath")}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => void doBackup()} disabled={busy}>
+          {t("settings.backup")}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => void api.createDesktopShortcut().then(() => toast.success(t("settings.shortcutDone")))}>
+          {t("settings.shortcut")}
+        </Button>
+      </div>
+    </div>
+  );
+
+  const helpSection = (
+    <Button variant="outline" onClick={() => setHelpOpen(true)} className="w-full">
+      <BookOpen className="mr-2 h-4 w-4" />
+      {t("settings.help")}
+    </Button>
+  );
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <h2 className="text-lg font-semibold">{t("app.settings")}</h2>
+      <div className="mt-4 flex gap-6">
+        <nav className="flex w-48 shrink-0 flex-col gap-1">
+          {SECTIONS.map(({ id, icon: Icon }) => (
+            <Button
+              key={id}
+              variant={section === id ? "default" : "ghost"}
+              className="justify-start"
+              onClick={() => setSection(id)}
+            >
+              <Icon className="mr-2 h-4 w-4" />
+              {t(`settings.sections.${id}`)}
+            </Button>
+          ))}
+        </nav>
+        <div className="min-w-0 flex-1 space-y-3">
+          {section === "general" && generalSection}
+          {section === "appearance" && appearanceSection}
+          {section === "lessons" && lessonsSection}
+          {section === "reminders" && remindersSection}
+          {section === "templates" && templatesSection}
+          {section === "integrations" && integrationsSection}
+          {section === "data" && dataSection}
+          {section === "help" && helpSection}
+        </div>
       </div>
 
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>

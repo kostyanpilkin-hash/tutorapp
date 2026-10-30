@@ -242,6 +242,16 @@ const be = {
     backupCancelled: "Захаванне адменена",
     shortcut: "Ярлык на працоўны стол",
     shortcutDone: "Ярлык створаны",
+    sections: {
+      general: "Агульнае",
+      appearance: "Выгляд",
+      lessons: "Заняткі",
+      reminders: "Нагадванні",
+      templates: "Шаблоны",
+      integrations: "Інтэграцыі",
+      data: "Даныя",
+      help: "Даведка",
+    },
     themes: {
       light: "Светлая",
       dark: "Цёмная",
