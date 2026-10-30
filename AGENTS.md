@@ -27,6 +27,13 @@
 
 Осталось после приёмки: выпилить `expandLessons` и `fe.expand` fallback, перевести `scheduler/expand_weekly_starts` на `occurrences::collect`.
 
+## Подводные камни
+
+- `nul` — зарезервированное имя Windows: bash-редирект `> nul`/`2> nul` создаёт буквальный файл `nul`, который ломает git. Использовать `2>/dev/null`. Если `nul` появился — удалить `rm -f nul`, если не удаляется — `cmd //c "del nul"`.
+- Тихая установка NSIS `/S`: процесс `TutorApp_*_setup` работает до ~60 с и может вернуть код 1 — это не провал. Ждать исчезновения процесса через `tasklist`, сверять результат по размеру/mtime `$LOCALAPPDATA/TutorApp/tutor-app.exe`.
+- Shell — git-bash: `tail`/`head`/`ls`/`tasklist` в bash-форме, не PowerShell-командлеты.
+- Скиллы: `.devin/skills/release` (полный пайплайн релиза) и `.devin/skills/parity` (проверка паритета развёртки серий на копии реальной БД).
+
 ## Особенности
 
 - Темы: `html.theme-*` классы в `src/index.css`, метаданные `src/lib/themes.ts`, переводы `src/i18n/locales/{ru,en,be}.ts`.
