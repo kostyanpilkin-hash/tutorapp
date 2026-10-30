@@ -174,6 +174,8 @@ export const api = {
   tgConnect: (token: string) =>
     call(() => invoke<TgConnectResult>("tg_connect", { token })),
   tgDisconnect: () => call(() => invoke<void>("tg_disconnect")),
+  tgPreferences: () =>
+    call(() => invoke<{ offsets: number[]; fields: string[] }>("tg_preferences")),
   tgTest: () => call(() => invoke<void>("tg_test")),
   resetPhoneKey: () => call(() => invoke<void>("reset_phone_key")),
   setPhoneServer: (enabled: boolean) =>

@@ -33,6 +33,7 @@ export const keys = {
   },
   tg: {
     status: () => ["tg", "status"] as const,
+    prefs: () => ["tg", "prefs"] as const,
   },
   meta: {
     dbPath: () => ["meta", "dbPath"] as const,

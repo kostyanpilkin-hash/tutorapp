@@ -86,6 +86,18 @@ function SettingRow({
   );
 }
 
+// Mirrors FIELD_CHOICES / OFFSET_CHOICES in src-tauri/src/telegram/handlers.rs.
+const TG_FIELD_CHOICES = ["student", "time", "link", "subject", "duration", "notes", "payment", "cost"] as const;
+// student/time are always part of the bot's lesson card — locked on.
+const TG_REQUIRED_FIELDS = new Set(["student", "time"]);
+const TG_OFFSET_OPTIONS = [
+  { value: 1440, key: "reminder.dayBefore" },
+  { value: 120, key: "reminder.hours2" },
+  { value: 60, key: "reminder.hourBefore" },
+  { value: 30, key: "reminder.min30" },
+  { value: 15, key: "reminder.min15" },
+] as const;
+
 const REMINDER_OPTIONS = [
   { value: 1440, key: "reminder.dayBefore" },
   { value: 60, key: "reminder.hourBefore" },
@@ -159,6 +171,11 @@ export function SettingsPanel() {
     refetchInterval: 4000,
   });
   const tgState = tgQuery.data ?? null;
+  const tgPrefsQuery = useQuery({
+    queryKey: keys.tg.prefs(),
+    queryFn: () => api.tgPreferences(),
+  });
+  const tgPrefs = tgPrefsQuery.data ?? { offsets: [60], fields: ["student", "time", "link", "subject"] };
   const [tgCode, setTgCode] = useState("");
   const [tgUsername, setTgUsername] = useState("");
   const [tgBusy, setTgBusy] = useState(false);
@@ -227,6 +244,21 @@ export function SettingsPanel() {
   const tgTest = async () => {
     try { await api.tgTest(); } catch (e) { setTgError(String(e)); }
   };
+
+  const saveTgFields = async (fields: string[]) => {
+    const list = [...new Set([...fields, ...TG_REQUIRED_FIELDS])];
+    await api.setSetting("tg_fields", list.join(","));
+    await reloadTg();
+  };
+  const saveTgOffsets = async (offsets: number[]) => {
+    const list = offsets.length ? [...offsets].sort((a, b) => a - b) : [60];
+    await api.setSetting("tg_offsets", list.join(","));
+    await reloadTg();
+  };
+  const toggleTgField = (f: string, on: boolean) =>
+    void saveTgFields(on ? [...tgPrefs.fields, f] : tgPrefs.fields.filter((x) => x !== f));
+  const toggleTgOffset = (m: number, on: boolean) =>
+    void saveTgOffsets(on ? [...tgPrefs.offsets, m] : tgPrefs.offsets.filter((x) => x !== m));
 
   useEffect(() => {
     setDurationDraft(String(defaultDuration));
@@ -587,6 +619,39 @@ export function SettingsPanel() {
           </div>
         )}
         {tgError && <p className="text-xs text-red-500">{tgError}</p>}
+        <div className="border-t border-border pt-2.5 space-y-1.5">
+          <div>
+            <Label className="text-xs">{t("settings.tgFieldsTitle")}</Label>
+            <p className="text-xs text-muted-foreground">{t("settings.tgFieldsHint")}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4">
+            {TG_FIELD_CHOICES.map((f) => {
+              const required = TG_REQUIRED_FIELDS.has(f);
+              return (
+                <div key={f} className="flex items-center justify-between py-0.5">
+                  <span className="text-sm">{t(`settings.tgField.${f}`)}</span>
+                  <Switch
+                    checked={required || tgPrefs.fields.includes(f)}
+                    disabled={required}
+                    onCheckedChange={(v) => toggleTgField(f, v)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <Label className="text-xs">{t("settings.tgOffsetsTitle")}</Label>
+          <div className="grid grid-cols-2 gap-x-4">
+            {TG_OFFSET_OPTIONS.map((o) => (
+              <div key={o.value} className="flex items-center justify-between py-0.5">
+                <span className="text-sm">{t(o.key)}</span>
+                <Switch
+                  checked={tgPrefs.offsets.includes(o.value)}
+                  onCheckedChange={(v) => toggleTgOffset(o.value, v)}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </>
   );
