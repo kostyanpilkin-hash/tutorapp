@@ -12,7 +12,7 @@
 
 ## 3. React Query (по компоненту за раз)
 
-Убрать `refreshKey`/ручные reload-пропсы: `useQuery` + инвалидация по ключам (`["lessons", range]`, `["students"]`). Начать с StudentsPanel/FinancePanel. Риск: рефактор каждой панели отдельно.
+Детальный план: `.devin/plans/react-query.md` — фабрика ключей, порядок панелей (lessonStore → StudentsPanel → FinancePanel → остальные), ловушки, критерии приёмки.
 
 ## 4. Узкие селекторы Zustand + memo — ✅ выполнено (2026-10-30)
 
