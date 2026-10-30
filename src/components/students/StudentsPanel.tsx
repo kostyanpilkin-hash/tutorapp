@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { format, parseISO, addMonths, subYears, startOfDay, endOfDay } from "date-fns";
 import { ru, enUS, be as beLocale } from "date-fns/locale";
 import { Archive, ArchiveRestore, CheckCircle2, Plus, Search, User, Wallet } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Lesson } from "@/types/lesson";
-import type { Student, StudentFinance } from "@/types/student";
+import type { Student } from "@/types/student";
 import { api } from "@/lib/api";
+import { keys, invalidateAppData } from "@/lib/queryKeys";
 import { applyTemplate, loadMessageTemplates } from "@/lib/messageTemplates";
 import type { MessageTemplate } from "@/lib/messageTemplates";
 import { messengerUrl } from "@/lib/contacts";
@@ -78,16 +80,12 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
   const toast = useToastStore(
     useShallow((s) => ({ error: s.error, info: s.info, success: s.success })),
   );
-  const [students, setStudents] = useState<Student[]>([]);
+  const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [lessons, setLessons] = useState<Lesson[]>([]);
-  const [expandedLessons, setExpandedLessons] = useState<Lesson[]>([]);
-  const [finance, setFinance] = useState<StudentFinance | null>(null);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editStudent, setEditStudent] = useState<Student | null>(null);
-  const [loading, setLoading] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<"past" | "upcoming">("past");
   const [paymentFilter, setPaymentFilter] = useState<"all" | "paid" | "unpaid">("all");
   const [subjectFilter, setSubjectFilter] = useState("all");
@@ -95,44 +93,55 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
   const [messageDialogOpen, setMessageDialogOpen] = useState(false);
   const [messageTemplates, setMessageTemplates] = useState<MessageTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("__none__");
+  const [historyWindow] = useState(() => {
+    const now = new Date();
+    return { from: startOfDay(subYears(now, 2)), to: endOfDay(addMonths(now, 2)) };
+  });
 
-  const loadStudents = useCallback(async () => {
-    const data = await api.getStudents(showArchived);
-    setStudents(data);
-    if (selectedId && !data.find((s) => s.id === selectedId)) {
+  const studentsQuery = useQuery({
+    queryKey: keys.students.all(showArchived),
+    queryFn: () => api.getStudents(showArchived),
+  });
+  const students = studentsQuery.data ?? [];
+
+  const detailEnabled = selectedId !== null;
+  const lessonsQuery = useQuery({
+    queryKey: keys.students.lessons(selectedId ?? ""),
+    queryFn: () => api.getStudentLessons(selectedId!),
+    enabled: detailEnabled,
+  });
+  const financeQuery = useQuery({
+    queryKey: keys.students.finance(selectedId ?? ""),
+    queryFn: () => api.getStudentFinance(selectedId!),
+    enabled: detailEnabled,
+  });
+  const expandedQuery = useQuery({
+    queryKey: keys.students.expanded(
+      selectedId ?? "",
+      historyWindow.from.toISOString(),
+      historyWindow.to.toISOString(),
+    ),
+    queryFn: () => loadExpandedLessons(historyWindow.from, historyWindow.to),
+    enabled: detailEnabled,
+  });
+  const lessons = lessonsQuery.data ?? [];
+  const finance = financeQuery.data ?? null;
+  const expandedLessons = useMemo(
+    () =>
+      (expandedQuery.data ?? []).filter((l) =>
+        l.students.some((s) => s.studentId === selectedId),
+      ),
+    [expandedQuery.data, selectedId],
+  );
+  const loading =
+    detailEnabled &&
+    (lessonsQuery.isPending || financeQuery.isPending || expandedQuery.isPending);
+
+  useEffect(() => {
+    if (selectedId && students.length > 0 && !students.find((s) => s.id === selectedId)) {
       setSelectedId(null);
     }
-  }, [showArchived, selectedId]);
-
-  const loadDetail = useCallback(async (id: string) => {
-    setLoading(true);
-    try {
-      const now = new Date();
-      const [ls, fin, expanded] = await Promise.all([
-        api.getStudentLessons(id),
-        api.getStudentFinance(id),
-        loadExpandedLessons(startOfDay(subYears(now, 2)), endOfDay(addMonths(now, 2))),
-      ]);
-      setLessons(ls);
-      setFinance(fin);
-      setExpandedLessons(expanded.filter((l) => l.students.some((s) => s.studentId === id)));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadStudents();
-  }, [loadStudents]);
-
-  useEffect(() => {
-    if (selectedId) void loadDetail(selectedId);
-    else {
-      setLessons([]);
-      setExpandedLessons([]);
-      setFinance(null);
-    }
-  }, [selectedId, loadDetail]);
+  }, [students, selectedId]);
 
   useEffect(() => {
     setHistoryLimit(HISTORY_STEP);
@@ -214,7 +223,7 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
     if (!selected) return;
     if (!selected.archived && !window.confirm(t("students.confirmArchiveStudent"))) return;
     await api.archiveStudent(selected.id, !selected.archived);
-    await loadStudents();
+    await invalidateAppData(queryClient);
   };
 
   useEffect(() => {
@@ -253,23 +262,11 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
     setMessageDialogOpen(false);
   };
 
-  const refreshHistory = async () => {
-    if (!selectedId) return;
-    await loadDetail(selectedId);
-  };
-
-  const refreshFinance = async () => {
-    if (!selectedId) return;
-    const data = await api.getStudentFinance(selectedId);
-    setFinance(data);
-  };
-
   const quickComplete = async (lesson: Lesson, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
       await setLessonStatus(lesson, "completed");
       toast.info(t("today.markedCompleted"));
-      await refreshHistory();
     } catch {
       // api toasts
     }
@@ -281,7 +278,6 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
     try {
       await setLessonPaid(lesson, !paid);
       toast.info(paid ? t("today.markedUnpaid") : t("today.markedPaid"));
-      await refreshHistory();
     } catch {
       // api toasts
     }
@@ -419,9 +415,8 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
                       onClick={async () => {
                         try {
                           await api.applyPrepaidLessons(selected.id);
+                          await invalidateAppData(queryClient);
                           toast.info(t("students.prepaidApplied"));
-                          await refreshFinance();
-                          await refreshHistory();
                         } catch {
                           // api toasts
                         }
@@ -560,7 +555,7 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
         tutorTimezone={tutorTimezone}
         onClose={() => setFormOpen(false)}
         onSaved={() => {
-          void loadStudents();
+          void invalidateAppData(queryClient);
           void useSettingsStore.getState().setOnboardingDone();
         }}
       />

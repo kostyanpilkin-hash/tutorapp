@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAppData } from "@/lib/queryKeys";
 import type { Student, StudentInput } from "@/types/student";
 import { studentToInput } from "@/types/student";
 import { api } from "@/lib/api";
@@ -49,6 +51,7 @@ function toInput(s: Student): StudentInput {
 
 export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSaved, elevated }: Props) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [form, setForm] = useState<StudentInput>({
     name: "",
     notes: "",
@@ -167,6 +170,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
           if (path) {
             setPhotoPath(path);
             setPhotoKey((k) => k + 1);
+            await invalidateAppData(queryClient);
           }
         }
       }
@@ -208,6 +212,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     try {
       await doSave();
       await api.updateStudentLessonsCurrency(dlg.studentId, dlg.newCurrency, cost);
+      await invalidateAppData(queryClient);
       await handleLinkUpdate();
     } finally {
       setSaving(false);
@@ -223,6 +228,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     setSaving(true);
     try {
       await api.updateStudentLessonsLink(targetId, dlg.link);
+      await invalidateAppData(queryClient);
     } finally {
       setSaving(false);
     }
@@ -240,6 +246,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     if (path) {
       setPhotoPath(path);
       setPhotoKey((k) => k + 1);
+      await invalidateAppData(queryClient);
     }
   };
 
@@ -247,6 +254,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     if (!studentId) return;
     const updated = await api.removeStudentPhoto(studentId);
     setPhotoPath(updated.photoPath ?? null);
+    await invalidateAppData(queryClient);
   };
 
   const openMessenger = () => {

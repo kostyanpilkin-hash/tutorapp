@@ -952,6 +952,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                   ? prev.map((s) => (s.id === student.id ? student : s))
                   : [...prev, student].sort((a, b) => a.name.localeCompare(b.name)),
               );
+              void invalidateAppData(queryClient);
             }}
           />
           </div>
