@@ -216,6 +216,58 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
     Ok(out)
 }
 
+/// UTC instants of weekly series slots in `[from, to]` — the same local-tz
+/// expansion `collect` uses internally (BYDAY/INTERVAL/COUNT, exclusive UNTIL),
+/// without exception handling. For per-student aggregates (finance) that
+/// resolve exceptions themselves.
+pub fn expand_weekly_starts_local(
+    anchor_utc: DateTime<Utc>,
+    rule: &Option<String>,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    tz: chrono_tz::Tz,
+) -> Vec<DateTime<Utc>> {
+    let Some((mut bydays, interval, until, count)) = rule.as_deref().and_then(parse_rule) else {
+        return Vec::new();
+    };
+    let anchor = anchor_utc.with_timezone(&tz);
+    let anchor_date = anchor.date_naive();
+    let time = anchor.time();
+    if bydays.is_empty() {
+        bydays = vec![anchor_date.weekday()];
+    }
+    let monday = anchor_date - Duration::days(anchor_date.weekday().num_days_from_monday() as i64);
+    let to_d = to.with_timezone(&tz).date_naive();
+
+    let mut out = Vec::new();
+    let mut emitted = 0i64;
+    let mut week = monday;
+    'weeks: while week <= to_d {
+        for wd in &bydays {
+            let d = week + Duration::days(wd.num_days_from_monday() as i64);
+            if d < anchor_date {
+                continue;
+            }
+            let Some(local_dt) = tz.from_local_datetime(&d.and_time(time)).single() else {
+                continue;
+            };
+            let occ_utc = local_dt.with_timezone(&Utc);
+            emitted += 1;
+            if count.map(|c| emitted > c).unwrap_or(false) {
+                break 'weeks;
+            }
+            if until.map(|u| occ_utc >= u).unwrap_or(false) {
+                break 'weeks;
+            }
+            if occ_utc >= from && occ_utc <= to {
+                out.push(occ_utc);
+            }
+        }
+        week += Duration::weeks(interval.max(1));
+    }
+    out
+}
+
 /// Prefer the newest exception when several exist for one slot
 /// (completed > no_show > cancelled > other, then latest update).
 fn pick_exception<'a>(matches: &[&'a Raw]) -> Option<&'a Raw> {
@@ -356,4 +408,214 @@ pub fn materialize(conn: &Connection, occ_id: &str, tz: chrono_tz::Tz) -> Result
     )
     .map_err(|e| e.to_string())?;
     Ok(new_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expand_local_byday_uses_local_weekday() {
+        // Anchor: 2026-07-07 00:30 Europe/Moscow = 2026-07-06T21:30Z (UTC date is Monday,
+        // local date is Tuesday). BYDAY=TU was written for the LOCAL weekday.
+        let tz = chrono_tz::Europe::Moscow;
+        let anchor = "2026-07-06T21:30:00Z".parse::<DateTime<Utc>>().unwrap();
+        let rule = Some("FREQ=WEEKLY;BYDAY=TU".to_string());
+        let from = "2026-07-06T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let to = "2026-07-22T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+
+        let starts = expand_weekly_starts_local(anchor, &rule, from, to, tz);
+        let got: Vec<String> = starts.iter().map(|d| d.to_rfc3339()).collect();
+        // Tuesdays 00:30 local: Jul 7, 14, 21 -> UTC 21:30 the day before.
+        assert_eq!(
+            got,
+            vec![
+                "2026-07-06T21:30:00+00:00".to_string(),
+                "2026-07-13T21:30:00+00:00".to_string(),
+                "2026-07-20T21:30:00+00:00".to_string(),
+            ]
+        );
+        for s in &starts {
+            assert_eq!(s.with_timezone(&tz).weekday(), Weekday::Tue);
+        }
+    }
+
+    #[test]
+    fn expand_local_keeps_wall_clock_across_dst() {
+        // Berlin switches CET->CEST on 2026-03-29. Weekly series at 23:30 local
+        // must stay at 23:30 local (shift in UTC), not drift to 00:30 next day.
+        let tz = chrono_tz::Europe::Berlin;
+        let anchor = "2026-03-28T22:30:00Z".parse::<DateTime<Utc>>().unwrap(); // Sat 23:30 CET
+        let rule = Some("FREQ=WEEKLY".to_string());
+        let from = "2026-03-28T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let to = "2026-04-12T00:00:00Z".parse::<DateTime<Utc>>().unwrap();
+
+        let starts = expand_weekly_starts_local(anchor, &rule, from, to, tz);
+        let local: Vec<String> = starts
+            .iter()
+            .map(|d| d.with_timezone(&tz).format("%Y-%m-%d %H:%M").to_string())
+            .collect();
+        assert_eq!(
+            local,
+            vec![
+                "2026-03-28 23:30".to_string(),
+                "2026-04-04 23:30".to_string(),
+                "2026-04-11 23:30".to_string(),
+            ]
+        );
+    }
+}
+
+#[cfg(test)]
+mod realdb_tests {
+    use super::*;
+    use chrono::{Datelike, NaiveTime, Timelike};
+    use rusqlite::Connection;
+
+    // ── Legacy UTC-anchored expander (deleted in the finance-expanders wave).
+    // Kept here ONLY as the before/after oracle for real-DB diffs.
+    fn legacy_weekday(code: &str) -> Option<Weekday> {
+        match code.to_uppercase().as_str() {
+            "MO" => Some(Weekday::Mon),
+            "TU" => Some(Weekday::Tue),
+            "WE" => Some(Weekday::Wed),
+            "TH" => Some(Weekday::Thu),
+            "FR" => Some(Weekday::Fri),
+            "SA" => Some(Weekday::Sat),
+            "SU" => Some(Weekday::Sun),
+            _ => None,
+        }
+    }
+
+    fn legacy_expand_utc(
+        anchor: DateTime<Utc>,
+        rule: &Option<String>,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Vec<DateTime<Utc>> {
+        let mut until = None;
+        let mut count = None;
+        let mut bydays: Vec<Weekday> = Vec::new();
+        if let Some(r) = rule {
+            for part in r.split(';') {
+                let p = part.trim();
+                if let Some(raw) = p.strip_prefix("UNTIL=").or_else(|| p.strip_prefix("until=")) {
+                    if let Ok(dt) = raw.parse::<DateTime<Utc>>() {
+                        until = Some(dt);
+                    }
+                } else if let Some(raw) =
+                    p.strip_prefix("COUNT=").or_else(|| p.strip_prefix("count="))
+                {
+                    if let Ok(n) = raw.parse::<u32>() {
+                        if n > 0 {
+                            count = Some(n);
+                        }
+                    }
+                } else if let Some(raw) =
+                    p.strip_prefix("BYDAY=").or_else(|| p.strip_prefix("byday="))
+                {
+                    bydays = raw.split(',').filter_map(|c| legacy_weekday(c.trim())).collect();
+                }
+            }
+        }
+        let anchor_weekday = anchor.weekday();
+        let time = NaiveTime::from_hms_opt(anchor.hour(), anchor.minute(), anchor.second())
+            .unwrap_or_else(|| NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        let mut result = Vec::new();
+        let mut cursor = anchor.date_naive();
+        let mut emitted: u32 = 0;
+        let hard_limit = anchor + Duration::days(366 * 5);
+        while cursor <= to.date_naive() {
+            let wd = cursor.weekday();
+            let matches = if bydays.is_empty() { wd == anchor_weekday } else { bydays.contains(&wd) };
+            if matches {
+                let occurrence = cursor.and_time(time).and_utc();
+                if occurrence + Duration::seconds(1) < anchor {
+                    cursor = cursor.succ_opt().unwrap_or(cursor);
+                    continue;
+                }
+                emitted += 1;
+                if let Some(c) = count {
+                    if emitted > c {
+                        break;
+                    }
+                }
+                if let Some(u) = until {
+                    if occurrence >= u {
+                        break;
+                    }
+                }
+                if occurrence > hard_limit {
+                    break;
+                }
+                if occurrence >= from && occurrence <= to {
+                    result.push(occurrence);
+                }
+            }
+            match cursor.succ_opt() {
+                Some(n) => cursor = n,
+                None => break,
+            }
+        }
+        result
+    }
+
+    /// Before/after diff of finance expansion on a real DB copy.
+    /// `PARITY_DB=<copy> cargo test -- --ignored finance_expansion_diff`
+    #[test]
+    #[ignore]
+    fn finance_expansion_diff() {
+        let db = std::env::var("PARITY_DB").expect("PARITY_DB");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        let tz = timezone(&conn);
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, start_at, recurrence_rule FROM lessons
+                 WHERE recurrence_rule LIKE '%WEEKLY%'
+                   AND (recurrence_parent_id IS NULL OR recurrence_parent_id = '')",
+            )
+            .unwrap();
+        let parents: Vec<(String, String, Option<String>)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let now = Utc::now();
+        let from = now - Duration::days(400);
+        let to = now + Duration::days(400);
+
+        let mut identical = 0;
+        let mut diffs = 0;
+        for (id, start_at, rule) in &parents {
+            let anchor: DateTime<Utc> = match start_at.parse() {
+                Ok(a) => a,
+                Err(_) => continue,
+            };
+            let old = legacy_expand_utc(anchor, rule, from, to);
+            let new = expand_weekly_starts_local(anchor, rule, from, to, tz);
+            if old == new {
+                identical += 1;
+                continue;
+            }
+            diffs += 1;
+            let old_set: std::collections::HashSet<String> =
+                old.iter().map(|d| d.to_rfc3339()).collect();
+            let new_set: std::collections::HashSet<String> =
+                new.iter().map(|d| d.to_rfc3339()).collect();
+            let only_old: Vec<&String> = old_set.iter().filter(|s| !new_set.contains(*s)).collect();
+            let only_new: Vec<&String> = new_set.iter().filter(|s| !old_set.contains(*s)).collect();
+            println!(
+                "DIFF parent {id} rule={rule:?}\n  only-utc-algo: {only_old:?}\n  only-local-algo: {only_new:?}"
+            );
+        }
+        println!(
+            "tz={tz}, parents={}, identical={}, diffs={diffs}",
+            parents.len(),
+            identical
+        );
+    }
 }

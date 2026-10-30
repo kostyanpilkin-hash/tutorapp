@@ -349,7 +349,7 @@ pub fn get_student_finance(
     state: tauri::State<AppState>,
     student_id: String,
 ) -> Result<StudentFinance, String> {
-    use crate::recurrence::{expand_weekly_starts, is_weekly};
+    use crate::recurrence::is_weekly;
     use chrono::{DateTime, Duration, Utc};
 
     #[derive(Clone)]
@@ -417,6 +417,7 @@ pub fn get_student_finance(
             });
         }
 
+        let tz = crate::occurrences::timezone(conn);
         let now = Utc::now();
         let from = now - Duration::days(365);
         let to = now + Duration::days(90);
@@ -501,7 +502,13 @@ pub fn get_student_finance(
             std::collections::HashSet::new();
 
         for parent in &parents {
-            for instance_start in expand_weekly_starts(parent.start_at, &parent.recurrence_rule, from, to) {
+            for instance_start in crate::occurrences::expand_weekly_starts_local(
+                parent.start_at,
+                &parent.recurrence_rule,
+                from,
+                to,
+                tz,
+            ) {
                 let exception = exceptions.iter().find(|ex| {
                     ex.recurrence_parent_id.as_deref() == Some(parent.id.as_str())
                         && ex

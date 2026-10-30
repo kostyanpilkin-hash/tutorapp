@@ -141,9 +141,9 @@ fn expand_weekly_instances(
     rule: &Option<String>,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
+    tz: Tz,
 ) -> Vec<DateTime<Utc>> {
-    use crate::recurrence::expand_weekly_starts;
-    expand_weekly_starts(anchor, rule, from, to)
+    crate::occurrences::expand_weekly_starts_local(anchor, rule, from, to, tz)
 }
 
 fn parse_instance_dt(raw: &str) -> Option<DateTime<Utc>> {
@@ -209,6 +209,7 @@ fn build_finance_entries(
     lessons: &[LessonFinanceBase],
     from: DateTime<Utc>,
     to: DateTime<Utc>,
+    tz: Tz,
 ) -> Vec<FinanceEntry> {
     let mut exceptions: Vec<LessonFinanceBase> = Vec::new();
     let mut parents: Vec<LessonFinanceBase> = Vec::new();
@@ -241,7 +242,7 @@ fn build_finance_entries(
     let mut used_exception_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for parent in parents {
-        for instance_start in expand_weekly_instances(parent.start_at, &parent.recurrence_rule, from, to) {
+        for instance_start in expand_weekly_instances(parent.start_at, &parent.recurrence_rule, from, to, tz) {
             if let Some(exception) = find_exception(&exceptions, &parent.id, instance_start) {
                 used_exception_ids.insert(exception.id.clone());
                 if exception.status != "cancelled" {
@@ -439,7 +440,7 @@ pub(crate) fn finance_report(
         }
 
         let lessons: Vec<LessonFinanceBase> = lesson_map.into_values().collect();
-        let entries = build_finance_entries(&lessons, from, to);
+        let entries = build_finance_entries(&lessons, from, to, tz);
         let now = Utc::now();
 
         let mut earned_map: BTreeMap<String, f64> = BTreeMap::new();

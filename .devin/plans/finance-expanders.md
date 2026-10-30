@@ -1,6 +1,11 @@
 # finance-expanders: миграция финансовых агрегатов на occurrences::collect
 
-## Статус: к исполнению
+## Статус: выполнено (2026-10-30), вариант B
+
+- `occurrences::expand_weekly_starts_local` — копия слот-генерации `collect` (local-tz якорь, BYDAY/INTERVAL/COUNT, эксклюзивный UNTIL); финансы и `get_student_finance` переведены, per-student пайплайн не тронут.
+- `recurrence.rs` свёрнут до `is_weekly` + `intervals_overlap`.
+- Дифф на копии реальной БД: Nсерия, 0 расхождений (полуночных/DST-якорей в данных нет) — игнорируемый тест `occurrences::realdb_tests::finance_expansion_diff`.
+- Известная оставшаяся проблема (не чинилась, поведение сохранено): исключение со слотом внутри периода и переносом наружу учитывается в отчёте исходного периода по времени переноса — сумма попадает в два периода (двойной учёт на стыке).
 
 Последние потребители старого UTC-экспандера `expand_weekly_starts` (`src-tauri/src/recurrence.rs`):
 

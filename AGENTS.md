@@ -21,7 +21,7 @@
 
 Выполнено: фронт читает расписание через `get_expanded_lessons` (id экземпляров `parent::ISO`, поля `Occ.row_id`/`instance_iso`); scheduler и `find_overlaps` — на `occurrences::collect`; `snooze_reminder` нормализует ключи `parent::ISO`. Фронтовый `expandLessons` удалён (G1-4b); замороженная эталонная копия живёт в `src/lib/parity.test.ts` как оракул паритета.
 
-Осталось — планы в `.devin/plans/`: `g1-4b-remove-frontend-expander`, `finance-expanders` (`finance.rs`/`get_student_finance` на `expand_weekly_starts` — последний старый экспандер), `next-waves`.
+Осталось — планы в `.devin/plans/`: `next-waves`. Выполнены: `g1-4b-remove-frontend-expander`, `finance-expanders` (`recurrence.rs` свёрнут до `is_weekly`+`intervals_overlap`; финансы на `occurrences::expand_weekly_starts_local`).
 
 ## Подводные камни
 
