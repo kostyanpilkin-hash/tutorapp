@@ -287,11 +287,14 @@ async fn lessons(
 
         if let Some(rule) = &r.rule {
             // Recurring parent: expand.
-            if let Some((bydays, interval, until)) = parse_rule(rule) {
+            if let Some((mut bydays, interval, until, count)) = parse_rule(rule) {
                 if let Ok(start_utc) = r.start.parse::<DateTime<Utc>>() {
                     let anchor = start_utc.with_timezone(&tz);
                     let anchor_date = anchor.date_naive();
                     let time = anchor.time();
+                    if bydays.is_empty() {
+                        bydays = vec![anchor_date.weekday()];
+                    }
                     let monday = anchor_date
                         - Duration::days(anchor_date.weekday().num_days_from_monday() as i64);
                     let last = until.map(|u| u.min(to)).unwrap_or(to);
@@ -300,15 +303,22 @@ async fn lessons(
                         .map(|v| v.iter().map(|(d, _)| *d).collect())
                         .unwrap_or_default();
 
+                    // COUNT limits the number of generated occurrences from the
+                    // anchor regardless of the requested window.
+                    let mut emitted_total = 0i64;
                     let mut week = monday;
-                    while week <= last {
+                    while week <= last && count.map(|c| emitted_total < c).unwrap_or(true) {
                         for wd in &bydays {
                             let d = week
                                 + Duration::days(wd.num_days_from_monday() as i64);
-                            if d < anchor_date || d > last || d < from || d > to {
+                            if d < anchor_date || d > last {
                                 continue;
                             }
-                            if exs.contains(&d) {
+                            emitted_total += 1;
+                            if count.map(|c| emitted_total > c).unwrap_or(false) {
+                                break;
+                            }
+                            if exs.contains(&d) || d < from || d > to {
                                 continue;
                             }
                             if let Some(local_dt) = tz
@@ -336,7 +346,12 @@ async fn lessons(
     }
     let _ = emitted_exceptions;
 
+    // Dedupe identical occurrences (same student, start and duration) that can
+    // appear when overlapping series or exceptions coincide.
     out.sort_by(|a, b| a.start.cmp(&b.start));
+    out.dedup_by(|a, b| {
+        a.start == b.start && a.name == b.name && a.duration_minutes == b.duration_minutes
+    });
     Ok(Json(out))
 }
 
@@ -359,11 +374,12 @@ fn parse_any_date(s: &str, tz: chrono_tz::Tz) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-fn parse_rule(rule: &str) -> Option<(Vec<Weekday>, i64, Option<NaiveDate>)> {
+fn parse_rule(rule: &str) -> Option<(Vec<Weekday>, i64, Option<NaiveDate>, Option<i64>)> {
     let mut freq = String::new();
     let mut bydays: Vec<Weekday> = Vec::new();
     let mut interval: i64 = 1;
     let mut until: Option<NaiveDate> = None;
+    let mut count: Option<i64> = None;
     for part in rule.split(';') {
         let mut kv = part.splitn(2, '=');
         let (k, v) = (kv.next()?, kv.next()?);
@@ -385,19 +401,23 @@ fn parse_rule(rule: &str) -> Option<(Vec<Weekday>, i64, Option<NaiveDate>)> {
                 }
             }
             "INTERVAL" => interval = v.parse().unwrap_or(1),
+            "COUNT" => count = v.parse().ok(),
             "UNTIL" => {
-                until = NaiveDate::parse_from_str(v, "%Y-%m-%d")
-                    .ok()
+                // Accept "YYYY-MM-DD", "YYYYMMDD" and full datetimes like
+                // "2026-10-16T07:00:00.000Z" (first 10 chars).
+                until = v
+                    .get(..10)
+                    .and_then(|p| NaiveDate::parse_from_str(p, "%Y-%m-%d").ok())
                     .or_else(|| NaiveDate::parse_from_str(v, "%Y%m%d").ok());
             }
             _ => {}
         }
     }
-    if freq != "WEEKLY" || bydays.is_empty() {
+    if freq != "WEEKLY" {
         return None;
     }
     bydays.sort_by_key(|w| w.num_days_from_monday());
-    Some((bydays, interval, until))
+    Some((bydays, interval, until, count))
 }
 
 // ---------- Phone page ----------
@@ -444,7 +464,7 @@ h1{font-size:20px;margin-bottom:4px}
 const params = new URLSearchParams(location.search);
 let key = params.get('key') || localStorage.getItem('pk') || '';
 if (params.get('key')) localStorage.setItem('pk', key);
-const STATUS = {done:['Проведено','green'],not_done:['Не состоялось','amber'],cancelled:['Отменено','red']};
+const STATUS = {completed:['Проведено','green'],no_show:['Не состоялось','amber'],cancelled:['Отменено','red']};
 const PAY = {paid:['Оплачено','green'],unpaid:['Не оплачено','red'],prepaid:['Предоплата','']};
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 async function load(){
