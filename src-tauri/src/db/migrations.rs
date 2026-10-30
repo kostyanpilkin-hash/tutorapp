@@ -209,6 +209,14 @@ pub fn run(conn: &Connection) -> Result<(), String> {
 
     migrate_activity_log(conn)?;
 
+    // Retention: keep the newest 5000 journal entries.
+    let _ = conn.execute(
+        "DELETE FROM activity_log WHERE id IN (
+            SELECT id FROM activity_log ORDER BY created_at DESC LIMIT -1 OFFSET 5000
+        )",
+        [],
+    );
+
     Ok(())
 }
 

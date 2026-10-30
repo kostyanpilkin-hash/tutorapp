@@ -172,19 +172,21 @@ pub fn get_activity_log(
     state: tauri::State<AppState>,
     category: Option<String>,
     limit: Option<i64>,
+    offset: Option<i64>,
 ) -> Result<Vec<crate::models::ActivityLogEntry>, String> {
     state.pool.with_conn(|conn| {
-        let lim = limit.unwrap_or(500);
+        let lim = limit.unwrap_or(100);
+        let off = offset.unwrap_or(0);
         let mut stmt = conn
             .prepare(
                 "SELECT id, category, action, entity_id, entity_name, field, old_value, new_value, details, created_at
                  FROM activity_log
                  WHERE (?1 IS NULL OR category = ?1)
-                 ORDER BY created_at DESC LIMIT ?2",
+                 ORDER BY created_at DESC LIMIT ?2 OFFSET ?3",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map(params![category, lim], |row| {
+            .query_map(params![category, lim, off], |row| {
                 Ok(crate::models::ActivityLogEntry {
                     id: row.get(0)?,
                     category: row.get(1)?,

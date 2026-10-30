@@ -15,12 +15,7 @@ import { LessonFormDialog } from "@/components/lesson/LessonFormDialog";
 import { RescheduleLessonDialog } from "@/components/lesson/RescheduleLessonDialog";
 import { RescheduleSeriesDialog } from "@/components/lesson/RescheduleSeriesDialog";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
-import {
-  WeekView,
-  DayView,
-  MonthView,
-  AgendaView,
-} from "@/components/calendar/CalendarViews";
+import { WeekView, MonthView } from "@/components/calendar/CalendarViews";
 const FinancePanel = lazy(() =>
   import("@/components/finance/FinancePanel").then((m) => ({ default: m.FinancePanel })),
 );
@@ -178,10 +173,8 @@ export default function App() {
   }, [openCreate, goToToday]);
 
   const views: { id: CalendarView; label: string }[] = [
-    { id: "day", label: t("views.day") },
     { id: "week", label: t("views.week") },
     { id: "month", label: t("views.month") },
-    { id: "agenda", label: t("views.agenda") },
   ];
 
   const showOnboarding = loaded && !onboardingDone && studentCount === 0;
@@ -279,9 +272,6 @@ export default function App() {
                 {view === "week" && (
                   <WeekView lessons={expanded} anchor={anchorDate} onSelect={openEdit} onMoved={() => void reload()} onCreate={openCreate} />
                 )}
-                {view === "day" && (
-                  <DayView lessons={expanded} anchor={anchorDate} onSelect={openEdit} onMoved={() => void reload()} onCreate={openCreate} />
-                )}
                 {view === "month" && (
                   <MonthView
                     lessons={expanded}
@@ -290,9 +280,6 @@ export default function App() {
                     onCreate={openCreate}
                     onMoved={() => void reload()}
                   />
-                )}
-                {view === "agenda" && (
-                  <AgendaView lessons={expanded} onSelect={openEdit} onChanged={() => void reload()} />
                 )}
               </div>
             </>

@@ -164,10 +164,12 @@ export const api = {
   getStudentSettingsLog: (studentId?: string) =>
     call(() => invoke<StudentSettingsLog[]>("get_student_settings_log", { studentId })),
 
-  getActivityLog: (category?: string, limit?: number) =>
-    call(() => invoke<ActivityLogEntry[]>("get_activity_log", { category, limit })),
+  getActivityLog: (category?: string, limit?: number, offset?: number) =>
+    call(() => invoke<ActivityLogEntry[]>("get_activity_log", { category, limit, offset })),
 
   getPhoneLink: () => call(() => invoke<string | null>("get_phone_link")),
+  getPhoneLinks: () => call(() => invoke<string[]>("get_phone_links")),
+  resetPhoneKey: () => call(() => invoke<void>("reset_phone_key")),
   setPhoneServer: (enabled: boolean) =>
     call(() => invoke<void>("set_phone_server", { enabled })),
 

@@ -502,16 +502,26 @@ pub fn create_lesson(
                 &input.payment_status,
             )?;
             insert_reminders(conn, &id, &input.reminders)?;
-            if input.recurrence_parent_id.is_some() {
-                // Instance override: status / payment / reschedule of a series slot.
-                if input.status != "scheduled" {
-                    log_activity(conn, "lesson", "status_changed", Some(&id), Some(&student_name), Some("status"), Some("scheduled"), Some(&input.status), input.recurrence_instance_date.as_deref());
-                }
-                if input.payment_status == "paid" || input.payment_status == "prepaid" {
-                    log_activity(conn, "lesson", "payment_changed", Some(&id), Some(&student_name), Some("payment_status"), None, Some(&input.payment_status), input.recurrence_instance_date.as_deref());
-                }
-                if input.status == "scheduled" && input.payment_status != "paid" && input.payment_status != "prepaid" {
-                    log_activity(conn, "lesson", "rescheduled", Some(&id), Some(&student_name), Some("start_at"), input.recurrence_instance_date.as_deref(), Some(&input.start_at), None);
+            if let Some(parent_id) = input.recurrence_parent_id.as_deref() {
+                // Instance override of a series slot: diff against the parent template
+                // (the slot's own start is its instance date).
+                let parent: Option<(String, String)> = conn
+                    .query_row(
+                        "SELECT status, payment_status FROM lessons WHERE id = ?1",
+                        params![parent_id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .ok();
+                let (ps, pp) = parent.unwrap_or_else(|| ("scheduled".into(), "unpaid".into()));
+                let old_start = input.recurrence_instance_date.as_deref().unwrap_or(&input.start_at);
+                let logged = log_lesson_diff(
+                    conn, &id, &student_name,
+                    (&ps, &pp, old_start),
+                    (&input.status, &input.payment_status, &input.start_at),
+                    input.recurrence_instance_date.as_deref(),
+                );
+                if !logged {
+                    log_activity(conn, "lesson", "updated", Some(&id), Some(&student_name), None, None, None, input.recurrence_instance_date.as_deref());
                 }
             } else {
                 log_activity(
@@ -631,23 +641,16 @@ pub fn update_lesson(
             conn.execute("DELETE FROM reminders WHERE lesson_id = ?1", params![id])
                 .map_err(|e| e.to_string())?;
             insert_reminders(conn, &id, &input.reminders)?;
-            let mut logged = false;
-            if let Some((old_status, old_pay, old_start)) = &old {
-                if *old_status != input.status {
-                    log_activity(conn, "lesson", "status_changed", Some(&id), Some(&student_name), Some("status"), Some(old_status), Some(&input.status), input.recurrence_instance_date.as_deref());
-                    logged = true;
-                }
-                if *old_pay != input.payment_status {
-                    log_activity(conn, "lesson", "payment_changed", Some(&id), Some(&student_name), Some("payment_status"), Some(old_pay), Some(&input.payment_status), input.recurrence_instance_date.as_deref());
-                    logged = true;
-                }
-                if *old_start != input.start_at {
-                    log_activity(conn, "lesson", "rescheduled", Some(&id), Some(&student_name), Some("start_at"), Some(old_start), Some(&input.start_at), None);
-                    logged = true;
-                }
-            }
+            let logged = old.as_ref().is_some_and(|(s, p, st)| {
+                log_lesson_diff(
+                    conn, &id, &student_name,
+                    (s, p, st),
+                    (&input.status, &input.payment_status, &input.start_at),
+                    input.recurrence_instance_date.as_deref(),
+                )
+            });
             if !logged {
-                log_activity(conn, "lesson", "updated", Some(&id), Some(&student_name), None, None, None, None);
+                log_activity(conn, "lesson", "updated", Some(&id), Some(&student_name), None, None, None, input.recurrence_instance_date.as_deref());
             }
             Ok(())
         })();
@@ -667,77 +670,129 @@ pub fn update_lesson(
 #[tauri::command]
 pub fn delete_lesson(state: tauri::State<AppState>, id: String) -> Result<(), String> {
     state.pool.with_conn(|conn| {
-        let name: Option<String> = conn
-            .query_row(
-                "SELECT student_name FROM lessons WHERE id = ?1",
+        conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            let meta: Option<(String, String)> = conn
+                .query_row(
+                    "SELECT student_name, start_at FROM lessons WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .ok();
+            let ids = lesson_with_children(conn, &id);
+            let archive_id = archive_rows(conn, "delete", &ids)?;
+            conn.execute(
+                "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
                 params![id],
-                |r| r.get(0),
             )
-            .ok();
-        conn.execute(
-            "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
-            params![id],
-        )
-        .map_err(|e| e.to_string())?;
-        log_activity(conn, "lesson", "deleted", Some(&id), name.as_deref(), None, None, None, None);
-        Ok(())
+            .map_err(|e| e.to_string())?;
+            let (name, start) = meta.unzip();
+            log_activity(
+                conn, "lesson", "deleted", Some(&id), name.as_deref(),
+                Some("start_at"), start.as_deref(), None,
+                if archive_id.is_empty() { None } else { Some(&archive_id) },
+            );
+            Ok(())
+        })();
+        match result {
+            Ok(()) => conn.execute_batch("COMMIT").map_err(|e| e.to_string()),
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(e)
+            }
+        }
     })
 }
 
 #[tauri::command]
 pub fn delete_lesson_series(state: tauri::State<AppState>, id: String) -> Result<(), String> {
     state.pool.with_conn(|conn| {
-        // First, check if this is a parent lesson
-        let is_parent: bool = conn
-            .query_row(
-                "SELECT COUNT(*) FROM lessons WHERE id = ?1 AND (recurrence_rule IS NOT NULL AND recurrence_rule != '')",
-                params![id],
-                |r| r.get::<_, i64>(0),
-            )
-            .map(|c| c > 0)
-            .unwrap_or(false);
-
-        if is_parent {
-            // Delete the parent and all its exceptions
-            conn.execute(
-                "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
-                params![id],
-            )
-            .map_err(|e| e.to_string())?;
-        } else {
-            // If it's an exception, find the parent and delete the whole series
-            if let Ok(parent_id) = conn.query_row(
-                "SELECT recurrence_parent_id FROM lessons WHERE id = ?1",
-                params![id],
-                |r| r.get::<_, String>(0),
-            ) {
-                if !parent_id.is_empty() {
-                    conn.execute(
-                        "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
-                        params![parent_id],
-                    )
-                    .map_err(|e| e.to_string())?;
-                } else {
-                    // No parent, just delete this lesson
-                    conn.execute(
-                        "DELETE FROM lessons WHERE id = ?1",
-                        params![id],
-                    )
-                    .map_err(|e| e.to_string())?;
-                }
-            } else {
-                // No parent found, just delete this lesson
-                conn.execute(
-                    "DELETE FROM lessons WHERE id = ?1",
+        conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+        let result = (|| -> Result<(), String> {
+            // Resolve the series root: parent id for exceptions, own id otherwise.
+            let root: String = conn
+                .query_row(
+                    "SELECT COALESCE(NULLIF(recurrence_parent_id, ''), id) FROM lessons WHERE id = ?1",
                     params![id],
+                    |r| r.get(0),
                 )
                 .map_err(|e| e.to_string())?;
+            let meta: Option<(String, String, Option<String>)> = conn
+                .query_row(
+                    "SELECT student_name, start_at, recurrence_rule FROM lessons WHERE id = ?1",
+                    params![root],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .ok();
+            let ids = lesson_with_children(conn, &root);
+            let archive_id = archive_rows(conn, "series_delete", &ids)?;
+            conn.execute(
+                "DELETE FROM lessons WHERE id = ?1 OR recurrence_parent_id = ?1",
+                params![root],
+            )
+            .map_err(|e| e.to_string())?;
+            let (name, start, rule) = match meta {
+                Some((n, s, r)) => (Some(n), Some(s), r),
+                None => (None, None, None),
+            };
+            log_activity(
+                conn, "lesson", "series_deleted", Some(&root), name.as_deref(),
+                Some("start_at"), start.as_deref(), rule.as_deref(),
+                if archive_id.is_empty() { None } else { Some(&archive_id) },
+            );
+            Ok(())
+        })();
+        match result {
+            Ok(()) => conn.execute_batch("COMMIT").map_err(|e| e.to_string()),
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK");
+                Err(e)
             }
         }
-        Ok(())
     })
 }
 const LESSON_COLS: &str = "id, student_name, subject, start_at, duration_minutes, cost, currency, link, notes, status, payment_status, recurrence_rule, recurrence_parent_id, recurrence_instance_date, color, created_at, updated_at, materials, materials_link";
+
+/// Logs field-level diffs (status / payment / start) between `old` and `new`.
+/// Returns true if anything was logged.
+fn log_lesson_diff(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    old: (&str, &str, &str),
+    new: (&str, &str, &str),
+    instance_date: Option<&str>,
+) -> bool {
+    let mut logged = false;
+    if old.0 != new.0 {
+        log_activity(conn, "lesson", "status_changed", Some(id), Some(name), Some("status"), Some(old.0), Some(new.0), instance_date);
+        logged = true;
+    }
+    if old.1 != new.1 {
+        log_activity(conn, "lesson", "payment_changed", Some(id), Some(name), Some("payment_status"), Some(old.1), Some(new.1), instance_date);
+        logged = true;
+    }
+    let same_start = match (old.2.parse::<DateTime<Utc>>(), new.2.parse::<DateTime<Utc>>()) {
+        (Ok(a), Ok(b)) => a.timestamp() == b.timestamp(),
+        _ => old.2 == new.2,
+    };
+    if !same_start {
+        log_activity(conn, "lesson", "rescheduled", Some(id), Some(name), Some("start_at"), Some(old.2), Some(new.2), instance_date);
+        logged = true;
+    }
+    logged
+}
+
+/// Collects a lesson id plus all its exception rows (for archiving before delete).
+fn lesson_with_children(conn: &Connection, id: &str) -> Vec<String> {
+    let mut ids = vec![id.to_string()];
+    if let Ok(mut st) = conn.prepare("SELECT id FROM lessons WHERE recurrence_parent_id = ?1") {
+        if let Ok(rows) = st.query_map(params![id], |r| r.get::<_, String>(0)) {
+            ids.extend(rows.filter_map(|r| r.ok()));
+        }
+    }
+    ids
+}
 
 pub(crate) fn log_activity(
     conn: &Connection,
@@ -919,11 +974,21 @@ pub fn restore_lesson_archive(
     state.pool.with_conn(|conn| {
         conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
         let result = (|| -> Result<(), String> {
+            let restored: Option<(String, String)> = conn
+                .query_row(
+                    "SELECT id, student_name FROM archived_lessons WHERE archive_id = ?1 ORDER BY (recurrence_parent_id IS NULL OR recurrence_parent_id = '') DESC LIMIT 1",
+                    params![archive_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .ok();
             conn.execute(
                 &format!("INSERT OR REPLACE INTO lessons ({LESSON_COLS}) SELECT {LESSON_COLS} FROM archived_lessons WHERE archive_id = ?1"),
                 params![archive_id],
             )
             .map_err(|e| e.to_string())?;
+            if let Some((lid, lname)) = &restored {
+                log_activity(conn, "lesson", "restored", Some(lid), Some(lname), None, None, None, None);
+            }
             conn.execute(
                 "INSERT OR IGNORE INTO lesson_students (lesson_id, student_id, cost, currency, payment_status)
                  SELECT lesson_id, student_id, cost, currency, payment_status FROM archived_lesson_students WHERE archive_id = ?1",

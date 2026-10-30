@@ -49,13 +49,25 @@ fn ensure_key(conn: &Connection) -> Result<String, String> {
     Ok(k)
 }
 
-fn local_ip() -> String {
-    // Enumerate interfaces, skipping VPN/tunnel/virtual adapters, and prefer a
-    // real LAN IPv4 (192.168.x.x, 172.16-31.x.x, 10.x.x.x).
+/// The local IPv4 chosen by the OS for the default route (may be a VPN address).
+fn default_route_ip() -> Option<std::net::Ipv4Addr> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect("8.8.8.8:80").ok()?;
+    match sock.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(v4) => Some(v4),
+        _ => None,
+    }
+}
+
+/// All candidate LAN IPv4 addresses, best first. Skips VPN/tunnel/virtual
+/// adapters; prefers the interface that carries the default route, then
+/// 192.168.x.x, 172.16-31.x.x, 10.x.x.x.
+fn local_ips() -> Vec<String> {
     const TUNNEL_HINTS: &[&str] = &[
         "vpn", "tun", "tap", "xray", "wireguard", "wg", "openvpn", "tailscale",
         "wsl", "hyper-v", "virtualbox", "vmware", "loopback", "bluetooth",
     ];
+    let route = default_route_ip();
     let mut lan: Vec<std::net::Ipv4Addr> = Vec::new();
     if let Ok(ifs) = if_addrs::get_if_addrs() {
         for i in ifs {
@@ -64,34 +76,31 @@ fn local_ip() -> String {
                 continue;
             }
             if let std::net::IpAddr::V4(v4) = i.ip() {
-                if v4.is_private() {
+                if v4.is_private() && !lan.contains(&v4) {
                     lan.push(v4);
                 }
             }
         }
     }
-    // Prefer 192.168.x.x (most home networks), then 172.16-31.x.x, then 10.x.x.x.
     lan.sort_by_key(|a| {
-        let o = a.octets();
-        match o[0] {
-            192 => 0u8,
-            172 => 1,
-            10 => 2,
-            _ => 3,
-        }
+        let class = match a.octets()[0] {
+            192 => 1u8,
+            172 => 2,
+            10 => 3,
+            _ => 4,
+        };
+        (if Some(*a) == route { 0 } else { 1 }, class)
     });
-    if let Some(ip) = lan.first() {
-        return ip.to_string();
-    }
-    // Fallback: UDP socket trick to discover the route's local IP.
-    if let Ok(sock) = std::net::UdpSocket::bind("0.0.0.0:0") {
-        if sock.connect("8.8.8.8:80").is_ok() {
-            if let Ok(addr) = sock.local_addr() {
-                return addr.ip().to_string();
-            }
+    if lan.is_empty() {
+        if let Some(r) = route {
+            lan.push(r);
         }
     }
-    "localhost".to_string()
+    lan.into_iter().map(|a| a.to_string()).collect()
+}
+
+fn local_ip() -> String {
+    local_ips().into_iter().next().unwrap_or_else(|| "localhost".to_string())
 }
 
 fn phone_timezone(conn: &Connection) -> chrono_tz::Tz {
@@ -116,6 +125,37 @@ pub fn get_phone_link(state: tauri::State<AppState>) -> Result<Option<String>, S
             key
         )))
     })
+}
+
+/// All reachable links (one per LAN interface), best first.
+#[tauri::command]
+pub fn get_phone_links(state: tauri::State<AppState>) -> Result<Vec<String>, String> {
+    state.pool.with_conn(|conn| {
+        if setting(conn, "phone_server_enabled").as_deref() != Some("1") {
+            return Ok(Vec::new());
+        }
+        let key = ensure_key(conn)?;
+        Ok(local_ips()
+            .into_iter()
+            .map(|ip| format!("http://{ip}:{PHONE_PORT}/?key={key}"))
+            .collect())
+    })
+}
+
+/// Regenerates the access token; old links stop working. Restarts the server
+/// so the new key takes effect immediately.
+#[tauri::command]
+pub fn reset_phone_key(state: tauri::State<AppState>) -> Result<(), String> {
+    let enabled = state.pool.with_conn(|conn| {
+        conn.execute("DELETE FROM settings WHERE key = 'phone_key'", [])
+            .map_err(|e| e.to_string())?;
+        ensure_key(conn)?;
+        Ok(setting(conn, "phone_server_enabled").as_deref() == Some("1"))
+    })?;
+    if enabled {
+        start_server();
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -346,12 +386,11 @@ async fn lessons(
     }
     let _ = emitted_exceptions;
 
-    // Dedupe identical occurrences (same student, start and duration) that can
-    // appear when overlapping series or exceptions coincide.
+    // Dedupe by occurrence id (`<row id>` or `<series id>@<date>`), so two
+    // genuinely different lessons at the same time are both kept.
+    let mut seen: HashSet<String> = HashSet::new();
+    out.retain(|o| seen.insert(o.id.clone()));
     out.sort_by(|a, b| a.start.cmp(&b.start));
-    out.dedup_by(|a, b| {
-        a.start == b.start && a.name == b.name && a.duration_minutes == b.duration_minutes
-    });
     Ok(Json(out))
 }
 

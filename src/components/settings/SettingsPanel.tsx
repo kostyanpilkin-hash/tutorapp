@@ -69,14 +69,18 @@ export function SettingsPanel() {
   const [busy, setBusy] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [phoneLink, setPhoneLink] = useState<string | null>(null);
+  const [phoneLinks, setPhoneLinks] = useState<string[]>([]);
+  const [phoneIdx, setPhoneIdx] = useState(0);
+  const phoneLink = phoneLinks[phoneIdx] ?? phoneLinks[0] ?? null;
   const [phoneQr, setPhoneQr] = useState("");
+  const reloadPhone = () =>
+    api.getPhoneLinks().then((l) => { setPhoneLinks(l); setPhoneIdx(0); }).catch(() => setPhoneLinks([]));
 
   useEffect(() => {
     void isEnabled().then(setAutostart);
     void api.getDbPath().then(setDbPath).catch(() => setDbPath(""));
     void loadMessageTemplates().then(setTemplates).catch(() => setTemplates([]));
-    void api.getPhoneLink().then(setPhoneLink).catch(() => setPhoneLink(null));
+    void reloadPhone();
   }, []);
 
   useEffect(() => {
@@ -89,7 +93,12 @@ export function SettingsPanel() {
 
   const togglePhone = async () => {
     await api.setPhoneServer(!phoneLink);
-    await api.getPhoneLink().then(setPhoneLink).catch(() => setPhoneLink(null));
+    await reloadPhone();
+  };
+  const resetPhoneKey = async () => {
+    if (!window.confirm(t("settings.phoneResetConfirm"))) return;
+    await api.resetPhoneKey();
+    await reloadPhone();
   };
 
   useEffect(() => {
@@ -241,10 +250,8 @@ export function SettingsPanel() {
           <Select value={defaultCalendarView} onValueChange={(v) => void setDefaultCalendarView(v as CalendarView)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="day">{t("views.day")}</SelectItem>
               <SelectItem value="week">{t("views.week")}</SelectItem>
               <SelectItem value="month">{t("views.month")}</SelectItem>
-              <SelectItem value="agenda">{t("views.agenda")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -379,6 +386,21 @@ export function SettingsPanel() {
           </Button>
           {phoneLink && (
             <>
+              {phoneLinks.length > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {phoneLinks.map((l, i) => (
+                    <button
+                      key={l}
+                      onClick={() => setPhoneIdx(i)}
+                      className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition ${
+                        i === phoneIdx ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"
+                      }`}
+                    >
+                      {new URL(l).hostname}
+                    </button>
+                  ))}
+                </div>
+              )}
               <p className="break-all rounded bg-muted px-2 py-1.5 font-mono text-xs">{phoneLink}</p>
               {phoneQr && (
                 <div
@@ -387,6 +409,9 @@ export function SettingsPanel() {
                 />
               )}
               <p className="text-xs text-muted-foreground">{t("settings.phoneFirewall")}</p>
+              <Button variant="ghost" size="sm" onClick={() => void resetPhoneKey()}>
+                {t("settings.phoneResetKey")}
+              </Button>
             </>
           )}
         </div>

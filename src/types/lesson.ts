@@ -1,7 +1,7 @@
 export type LessonStatus = "scheduled" | "completed" | "cancelled" | "no_show";
 export type PaymentStatus = "unpaid" | "paid";
 export type Currency = "USD" | "BYN" | "RUB" | "EUR";
-export type CalendarView = "day" | "week" | "month" | "agenda";
+export type CalendarView = "week" | "month";
 export type Theme =
   | "light"
   | "dark"

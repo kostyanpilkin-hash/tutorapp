@@ -74,6 +74,8 @@ pub fn run() {
             get_student_settings_log,
             get_activity_log,
             http_server::get_phone_link,
+            http_server::get_phone_links,
+            http_server::reset_phone_key,
             http_server::set_phone_server,
             apply_prepaid_lessons,
             get_student_photo_data_url,

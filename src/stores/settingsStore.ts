@@ -27,7 +27,7 @@ interface SettingsState {
   setAnchorDate: (date: Date) => void;
 }
 
-const VALID_VIEWS: CalendarView[] = ["day", "week", "month", "agenda"];
+const VALID_VIEWS: CalendarView[] = ["week", "month"];
 function parseTheme(value: string | undefined): Theme {
   if (isTheme(value)) {
     return value;

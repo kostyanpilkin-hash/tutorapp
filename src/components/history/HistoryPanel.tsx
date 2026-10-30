@@ -25,6 +25,9 @@ const ACTION_ICONS: Record<string, typeof Calendar> = {
   created: Plus,
   deleted: Trash2,
   series_deleted_from: Trash2,
+  series_deleted: Trash2,
+  restored: Undo2,
+  rescheduled: ArrowRightLeft,
   updated: ArrowRightLeft,
   status_changed: CheckCircle,
   payment_changed: CreditCard,
@@ -53,55 +56,48 @@ function fmtDateTime(iso: string): string {
   });
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  scheduled: "По расписанию",
-  completed: "Проведено",
-  no_show: "Не состоялось",
-  cancelled: "Отменено",
-};
-const PAY_LABELS: Record<string, string> = {
-  paid: "Оплачено",
-  unpaid: "Не оплачено",
-  prepaid: "Предоплата",
-  none: "Без оплаты",
-};
+const PAGE = 100;
 
-function fmtValue(v: string | undefined, field?: string): string {
-  if (!v) return "—";
-  if (field === "start_at" || v.includes("T")) {
-    const d = new Date(v);
-    if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    }
-  }
-  if (field === "status") return STATUS_LABELS[v] || v;
-  if (field === "payment_status") return PAY_LABELS[v] || v;
-  return v;
+function fmtShortDate(v: string, locale: string): string {
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return d.toLocaleString(locale, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export function HistoryPanel() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [entries, setEntries] = useState<ActivityLogEntry[]>([]);
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
 
-  const load = useCallback(async () => {
+  const fmtValue = (v: string | undefined, field?: string): string => {
+    if (!v) return "—";
+    if (field === "start_at") return fmtShortDate(v, i18n.language);
+    if (field === "status") return t(`history.status.${v}`, { defaultValue: v });
+    if (field === "payment_status") return t(`history.pay.${v}`, { defaultValue: v });
+    return v;
+  };
+
+  const load = useCallback(async (offset = 0) => {
     const rows = await api.getActivityLog(
       filter === "all" ? undefined : filter,
-      500,
+      PAGE,
+      offset,
     );
-    setEntries(rows);
+    setEntries((prev) => (offset === 0 ? rows : [...prev, ...rows]));
+    setHasMore(rows.length === PAGE);
   }, [filter]);
 
   useEffect(() => {
-    void load();
+    void load(0);
   }, [load]);
 
   const undo = async (entry: ActivityLogEntry) => {
     if (!entry.details) return;
     try {
       await api.restoreLessonArchive(entry.details);
-      await load();
+      await load(0);
     } catch {
       useToastStore.getState().error(t("lesson.undoFailed"));
     }
@@ -123,8 +119,11 @@ export function HistoryPanel() {
     return parts.length ? parts.join(" · ") : null;
   };
 
-  const canUndo = (e: ActivityLogEntry) =>
-    (e.action === "deleted" || e.action === "series_deleted_from") && !!e.details;
+  const UNDOABLE = new Set(["deleted", "series_deleted", "series_deleted_from"]);
+  const canUndo = (e: ActivityLogEntry) => UNDOABLE.has(e.action) && !!e.details;
+  // For lesson-level entries `details` holds the instance date (not an archive id).
+  const lessonDate = (e: ActivityLogEntry) =>
+    e.category === "lesson" && !UNDOABLE.has(e.action) && e.details ? e.details : null;
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-auto p-1">
@@ -192,8 +191,8 @@ export function HistoryPanel() {
                   {(e.oldValue || e.newValue) && (
                     <div><span className="text-muted-foreground">{t("history.detailChange")}: </span>{fmtValue(e.oldValue, e.field)} → {fmtValue(e.newValue, e.field)}</div>
                   )}
-                  {e.details && e.action !== "series_deleted_from" && (
-                    <div><span className="text-muted-foreground">{t("history.detailLesson")}: </span>{fmtValue(e.details, "start_at")}</div>
+                  {lessonDate(e) && (
+                    <div><span className="text-muted-foreground">{t("history.detailLesson")}: </span>{fmtValue(lessonDate(e)!, "start_at")}</div>
                   )}
                   <div><span className="text-muted-foreground">{t("history.detailWhen")}: </span>{fmtDateTime(e.createdAt)}</div>
                   {canUndo(e) && (
@@ -210,6 +209,14 @@ export function HistoryPanel() {
             </div>
           );
         })}
+        {hasMore && (
+          <button
+            onClick={() => void load(entries.length)}
+            className="mx-auto mt-2 rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+          >
+            {t("history.loadMore")}
+          </button>
+        )}
       </div>
     </div>
   );
