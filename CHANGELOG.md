@@ -19,6 +19,11 @@
 ### Календарь
 - Убраны режимы «День» и «Список»; остались «Неделя» и «Месяц»
 
+### Темы — фирменные шрифты и эффекты
+- Встроены шрифты-двойники брендов (офлайн, через @fontsource): Inter (Mac/Cupertino/Notion), Noto Sans (Discord), Figtree (Spotify), Mona Sans + JetBrains Mono (GitHub), Cascadia/JetBrains Mono (Editor), Lato (Slack), Lora (Notion заголовки), Roboto Flex + Outfit (Material)
+- Настоящий Windows Mica для темы «Мика» и Acrylic-размытие для Mac/Cupertino через window-vibrancy
+- Фирменные детали: Discord — пилюля-индикатор в меню, сквиркл-аватары и зелёная «онлайн» точка, `#` перед заголовками; Spotify — зелёный градиент шапки, кнопка play на карточке ученика; GitHub — оранжевое подчёркивание табов, label-чипы; VS Code — activity-bar, заголовки как файлы `.tsx`; Material — ripple на кнопках, pill-навигация; Slack — `#` каналы; Notion — ручка `⋮⋮` при наведении
+
 ## 2026-10-30
 
 ### Журнал действий («История»)

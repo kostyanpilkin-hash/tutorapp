@@ -2,6 +2,21 @@ import { create } from "zustand";
 import type { CalendarView, Theme } from "@/types/lesson";
 import { api } from "@/lib/api";
 import { isTheme } from "@/lib/themes";
+import { invoke } from "@tauri-apps/api/core";
+
+const DARK_THEMES = new Set(["dark", "cupertino", "discord", "spotify", "github", "editor", "slack"]);
+const WINDOW_FX: Partial<Record<Theme, "mica" | "acrylic">> = {
+  mica: "mica",
+  mac: "acrylic",
+  cupertino: "acrylic",
+};
+
+function applyTheme(theme: Theme) {
+  document.documentElement.className = `theme-${theme}`;
+  const fx = WINDOW_FX[theme] ?? null;
+  document.documentElement.classList.toggle("window-fx", !!fx);
+  void invoke("set_window_effect", { effect: fx, dark: DARK_THEMES.has(theme) }).catch(() => undefined);
+}
 
 interface SettingsState {
   language: string;
@@ -67,7 +82,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const s = await api.getSettings();
     const theme = parseTheme(s.theme);
     const defaultCalendarView = parseCalendarView(s.default_calendar_view);
-    document.documentElement.className = `theme-${theme}`;
+    applyTheme(theme);
     set({
       language: s.language || "ru",
       theme,
@@ -88,12 +103,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
   setTheme: async (theme) => {
     await api.setSetting("theme", theme);
-    document.documentElement.className = `theme-${theme}`;
+    applyTheme(theme);
     set({ theme });
   },
 
   previewTheme: (theme) => {
-    document.documentElement.className = `theme-${theme}`;
+    applyTheme(theme);
     set({ theme });
   },
 

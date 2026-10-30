@@ -7,7 +7,7 @@ mod scheduler;
 #[cfg(windows)]
 mod windows_toast;
 
-use commands::{finance::*, lessons::*, reminders::*, settings::*, shortcut::*, students::*, students_bulk::*};
+use commands::{finance::*, lessons::*, reminders::*, settings::*, shortcut::*, students::*, students_bulk::*, window_fx::*};
 use db::{init_db, AppState};
 use scheduler::start_scheduler;
 use tauri::{
@@ -73,6 +73,7 @@ pub fn run() {
             update_student_lessons_link,
             get_student_settings_log,
             get_activity_log,
+            set_window_effect,
             http_server::get_phone_link,
             http_server::get_phone_links,
             http_server::reset_phone_key,

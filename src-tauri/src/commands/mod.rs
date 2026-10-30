@@ -5,3 +5,4 @@ pub mod settings;
 pub mod shortcut;
 pub mod students;
 pub mod students_bulk;
+pub mod window_fx;

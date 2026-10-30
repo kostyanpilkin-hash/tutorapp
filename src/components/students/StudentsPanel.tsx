@@ -307,6 +307,7 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
             <button
               key={s.id}
               type="button"
+              data-student-card
               onClick={() => setSelectedId(s.id)}
               className={cn(
                 "flex w-full items-center gap-2 rounded-lg border px-2 py-2 text-left text-sm",

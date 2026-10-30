@@ -36,15 +36,17 @@ export function StudentAvatar({ photoPath, name, color, className, textClassName
       <img
         src={src}
         alt={name}
-        className={cn("rounded-full object-cover", className)}
+        data-student-avatar
+        className={cn("relative rounded-full object-cover", className)}
       />
     );
   }
 
   return (
     <span
+      data-student-avatar
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full font-semibold text-white",
+        "relative flex shrink-0 items-center justify-center rounded-full font-semibold text-white",
         className,
         textClassName,
       )}

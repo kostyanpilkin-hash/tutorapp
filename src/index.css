@@ -597,10 +597,11 @@ html.theme-cupertino {
   --input-radius: 0.375rem;
   --sidebar-bg: #161617;
   --card-shadow: 0 2px 12px rgb(0 0 0 / 0.5);
-  --font-sans: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-  --font-display: -apple-system, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Inter Variable", -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Inter Variable", -apple-system, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
 }
-html.theme-cupertino body { background: var(--bg); }
+html.theme-cupertino body { background: var(--bg); font-feature-settings: "cv11", "ss01", "ss03"; letter-spacing: -0.01em; }
+html.theme-cupertino .font-display { letter-spacing: -0.025em; }
 
 /* Дискорд — тёмная колонка слева, тонкий скроллбар */
 html.theme-discord {
@@ -610,9 +611,10 @@ html.theme-discord {
   --input-radius: 0.25rem;
   --sidebar-bg: #1e1f22;
   --card-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
-  --font-sans: "gg sans", "Segoe UI", "Helvetica Neue", sans-serif;
-  --font-display: "gg sans", "Segoe UI", sans-serif;
+  --font-sans: "gg sans", "Noto Sans Variable", "Segoe UI", "Helvetica Neue", sans-serif;
+  --font-display: "gg sans", "Noto Sans Variable", "Segoe UI", sans-serif;
 }
+html.theme-discord .font-display { font-weight: 800; }
 html.theme-discord body { background: var(--bg); }
 html.theme-discord ::-webkit-scrollbar { width: 8px; height: 8px; }
 html.theme-discord ::-webkit-scrollbar-thumb { background: #1e1f22; border-radius: 4px; }
@@ -625,9 +627,10 @@ html.theme-spotify {
   --input-radius: 0.25rem;
   --sidebar-bg: #000000;
   --card-shadow: 0 8px 24px rgb(0 0 0 / 0.6);
-  --font-sans: "CircularSp", "Segoe UI", system-ui, sans-serif;
-  --font-display: "CircularSp", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "CircularSp", "Figtree Variable", "Segoe UI", system-ui, sans-serif;
+  --font-display: "CircularSp", "Figtree Variable", "Segoe UI", system-ui, sans-serif;
 }
+html.theme-spotify .font-display { font-weight: 900; letter-spacing: -0.04em; }
 html.theme-spotify body { background: var(--bg); }
 html.theme-spotify ::-webkit-scrollbar { width: 10px; }
 html.theme-spotify ::-webkit-scrollbar-thumb { background: #5a5a5a; border-radius: 5px; }
@@ -640,10 +643,11 @@ html.theme-github {
   --input-radius: 0.375rem;
   --sidebar-bg: #010409;
   --card-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
-  --font-sans: -apple-system, "Segoe UI", system-ui, sans-serif;
-  --font-display: -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Mona Sans Variable", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-display: "Mona Sans Variable", -apple-system, "Segoe UI", system-ui, sans-serif;
 }
 html.theme-github body { background: var(--bg); letter-spacing: -0.011em; }
+html.theme-github .font-mono, html.theme-github code { font-family: "JetBrains Mono Variable", ui-monospace, monospace; }
 
 /* Редактор — VS Code: квадратный, тонкий скроллбар, моноширинные заголовки */
 html.theme-editor {
@@ -654,7 +658,10 @@ html.theme-editor {
   --sidebar-bg: #252526;
   --card-shadow: 0 4px 16px rgb(0 0 0 / 0.5);
   --font-sans: "Segoe UI", system-ui, sans-serif;
-  --font-display: Consolas, "Cascadia Mono", "Courier New", monospace;
+  --font-display: "Cascadia Code", "Cascadia Mono", "JetBrains Mono Variable", Consolas, monospace;
+}
+html.theme-editor .font-mono, html.theme-editor code, html.theme-editor .tabular-nums {
+  font-family: "Cascadia Code", "JetBrains Mono Variable", Consolas, monospace;
 }
 html.theme-editor body { background: var(--bg); }
 html.theme-editor ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -685,10 +692,11 @@ html.theme-mac {
   --input-radius: 0.375rem;
   --sidebar-bg: rgb(236 236 241 / 0.8);
   --card-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
-  --font-sans: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-  --font-display: -apple-system, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Inter Variable", -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Inter Variable", -apple-system, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
 }
-html.theme-mac body { background: var(--bg); }
+html.theme-mac body { background: var(--bg); font-feature-settings: "cv11", "ss01", "ss03"; letter-spacing: -0.01em; }
+html.theme-mac .font-display { letter-spacing: -0.025em; }
 
 /* Ноушн — бумага, 3px радиусы, сериф-заголовки, почти невидимые границы */
 html.theme-notion {
@@ -699,9 +707,10 @@ html.theme-notion {
   --border: #e9e7e2;
   --sidebar-bg: #f7f6f3;
   --card-shadow: 0 8px 24px rgb(15 15 15 / 0.08);
-  --font-sans: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-  --font-display: Georgia, "Times New Roman", ui-serif, serif;
+  --font-sans: "Inter Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Lora Variable", Georgia, "Times New Roman", ui-serif, serif;
 }
+html.theme-notion .font-display { font-weight: 600; letter-spacing: -0.01em; }
 html.theme-notion body { background: var(--bg); }
 
 /* Материал — M3: большие радиусы, чёткие границы, elevation */
@@ -712,9 +721,10 @@ html.theme-material {
   --input-radius: 0.25rem;
   --sidebar-bg: #f8f9fa;
   --card-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 2px 6px 2px rgb(0 0 0 / 0.15);
-  --font-sans: "Roboto", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Roboto", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Roboto Flex Variable", "Roboto", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Outfit Variable", "Google Sans", "Roboto Flex Variable", "Segoe UI", system-ui, sans-serif;
 }
+html.theme-material .font-display { font-weight: 500; letter-spacing: 0; }
 html.theme-material body { background: var(--bg); }
 
 /* Мика — Windows 11: 8px, полупрозрачный сайдбар */
@@ -979,3 +989,95 @@ html.theme-cupertino body:has([data-page="home"]) {
   from { --lg-x3: 40%; --lg-y3: 115%; }
   to   { --lg-x3: 85%; --lg-y3: 55%;  }
 }
+
+/* Native window backdrop (Mica / Acrylic): let the OS effect show through. */
+html.window-fx, html.window-fx body, html.window-fx #root { background: transparent !important; }
+html.window-fx.theme-mica aside { background: rgb(255 255 255 / 0.35) !important; backdrop-filter: none; }
+html.window-fx.theme-mac aside, html.window-fx.theme-cupertino aside { background: transparent !important; backdrop-filter: none; }
+html.window-fx main { background: color-mix(in srgb, var(--bg) 72%, transparent); }
+
+/* =========================================================================
+   Brand signature touches
+   ========================================================================= */
+
+/* Discord: server-rail pill on nav, squircle student avatars, online dot */
+html.theme-discord aside nav button { position: relative; }
+html.theme-discord aside nav button::before {
+  content: ""; position: absolute; left: -16px; top: 50%; width: 4px; height: 8px;
+  background: #fff; border-radius: 0 4px 4px 0; transform: translateY(-50%); opacity: 0;
+  transition: height .15s ease, opacity .15s ease;
+}
+html.theme-discord aside nav button:hover::before { opacity: 1; height: 20px; }
+html.theme-discord aside nav button.bg-primary::before { opacity: 1; height: 32px; }
+html.theme-discord [data-student-avatar] {
+  border-radius: 50%; transition: border-radius .2s ease, background-color .2s ease;
+}
+html.theme-discord [data-student-card]:hover [data-student-avatar] { border-radius: 30%; }
+html.theme-discord [data-student-avatar]::after {
+  content: ""; position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px;
+  border-radius: 50%; background: #23a559; border: 3px solid var(--card);
+}
+html.theme-discord main h2.font-display::before { content: "#"; opacity: .45; margin-right: .35em; font-weight: 500; }
+
+/* Spotify: gradient header from accent, play-button on card hover, bold 900 */
+html.theme-spotify main {
+  background: linear-gradient(180deg, rgb(29 185 84 / 0.22) 0%, var(--bg) 320px);
+}
+html.theme-spotify [data-student-card] { position: relative; overflow: hidden; }
+html.theme-spotify [data-student-card]::after {
+  content: ""; position: absolute; right: 14px; bottom: 14px; width: 44px; height: 44px; border-radius: 50%;
+  background: #1ed760 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23000'%3E%3Cpath d='M8 5v14l11-7z'/%3E%3C/svg%3E") center/22px no-repeat;
+  box-shadow: 0 8px 16px rgb(0 0 0 / 0.5); opacity: 0; transform: translateY(8px);
+  transition: opacity .2s ease, transform .2s ease;
+}
+html.theme-spotify [data-student-card]:hover::after { opacity: 1; transform: translateY(0); }
+html.theme-spotify [data-student-card]:hover { background: #282828; }
+html.theme-spotify main h2.font-display { font-size: 2rem; }
+
+/* GitHub: orange underline tabs, label-style chips, contribution-style heat cells */
+html.theme-github main [role="tablist"] button[data-state="active"],
+html.theme-github main .bg-primary.rounded-full {
+  background: transparent !important; color: var(--fg) !important; border-radius: 0 !important;
+  box-shadow: inset 0 -2px 0 #f78166;
+}
+html.theme-github .rounded-full.px-3.py-1 { border: 1px solid var(--border); background: transparent; }
+html.theme-github [data-heat] { border-radius: 2px; outline: 1px solid rgb(27 31 35 / 0.06); }
+
+/* VS Code: activity bar look for sidebar, file tabs for pages, status bar */
+html.theme-editor aside { padding-top: 0; }
+html.theme-editor aside h1 {
+  font-family: var(--font-display); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase;
+  color: #bbbbbb; padding: 10px 0; margin: 0 0 8px; border-bottom: 1px solid #2b2b2b;
+}
+html.theme-editor aside nav button {
+  border-left: 2px solid transparent; border-radius: 0; font-family: var(--font-display); font-size: .82rem;
+}
+html.theme-editor aside nav button.bg-primary { background: #37373d !important; color: #fff !important; border-left-color: #007acc; }
+html.theme-editor aside nav button:hover:not(.bg-primary) { background: #2a2d2e; }
+html.theme-editor main h2.font-display::after { content: ".tsx"; opacity: .4; font-weight: 400; }
+html.theme-editor main h2.font-display::before { content: "⬢ "; color: #519aba; font-size: .8em; }
+
+/* Material 3: ripple on buttons, tonal surface, pill nav indicator */
+html.theme-material button { position: relative; overflow: hidden; }
+html.theme-material button::after {
+  content: ""; position: absolute; inset: 0; background: radial-gradient(circle at var(--rx, 50%) var(--ry, 50%), rgb(0 0 0 / 0.14) 0%, transparent 60%);
+  opacity: 0; transition: opacity .3s ease;
+}
+html.theme-material button:active::after { opacity: 1; transition: none; }
+html.theme-material aside nav button { border-radius: 9999px; }
+html.theme-material aside nav button.bg-primary { background: #d3e3fd !important; color: #041e49 !important; }
+
+/* Slack: emoji status chips, channel hash, bold Lato headings */
+html.theme-slack aside nav button::before { content: "#"; opacity: .6; margin-right: .5em; font-weight: 700; }
+html.theme-slack aside nav button svg { display: none; }
+html.theme-slack main h2.font-display { font-weight: 900; }
+
+/* Notion: dotted dividers, grab-handle on hover, soft focus */
+html.theme-notion [data-student-card], html.theme-notion .rounded-xl.border { border-style: solid; }
+html.theme-notion [data-student-card]:hover { background: rgb(55 53 47 / 0.04); }
+html.theme-notion [data-student-card]::before {
+  content: "⋮⋮"; position: absolute; left: -18px; top: 50%; transform: translateY(-50%);
+  color: rgb(55 53 47 / 0.35); letter-spacing: -2px; opacity: 0; transition: opacity .15s;
+}
+html.theme-notion [data-student-card] { position: relative; }
+html.theme-notion [data-student-card]:hover::before { opacity: 1; }
