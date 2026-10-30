@@ -61,6 +61,7 @@ pub struct TgStatus {
     chat_id: Option<i64>,
     pairing_code: Option<String>,
     last_error: Option<String>,
+    username: Option<String>,
 }
 
 #[tauri::command]
@@ -75,6 +76,7 @@ pub fn tg_status(state: tauri::State<AppState>) -> Result<TgStatus, String> {
             chat_id: linked,
             pairing_code: None,
             last_error: setting(conn, "tg_last_error"),
+            username: setting(conn, "tg_bot_username"),
         })
     })
 }

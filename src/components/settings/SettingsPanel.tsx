@@ -5,12 +5,18 @@ import {
   Bell,
   Blocks,
   BookOpen,
+  CalendarDays,
+  Clock,
   Database,
+  Globe,
   GraduationCap,
+  Languages,
   MessageSquare,
   Palette,
+  Power,
   SlidersHorizontal,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import QRCode from "qrcode";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
@@ -20,7 +26,9 @@ import { keys } from "@/lib/queryKeys";
 import type { MessageTemplate } from "@/lib/messageTemplates";
 import { loadMessageTemplates, saveMessageTemplates } from "@/lib/messageTemplates";
 import { useToastStore } from "@/stores/toastStore";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label, Textarea } from "@/components/ui/label";
 import {
@@ -54,6 +62,29 @@ const SECTIONS = [
 ] as const;
 
 type SettingsSection = (typeof SECTIONS)[number]["id"];
+
+function SettingRow({
+  icon: Icon,
+  label,
+  hint,
+  children,
+}: {
+  icon?: LucideIcon;
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5">
+      {Icon && <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />}
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium leading-tight">{label}</p>
+        {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
 
 const REMINDER_OPTIONS = [
   { value: 1440, key: "reminder.dayBefore" },
@@ -158,8 +189,8 @@ export function SettingsPanel() {
     void QRCode.toString(phoneLink, { type: "svg", margin: 1 }).then(setPhoneQr).catch(() => setPhoneQr(""));
   }, [phoneLink]);
 
-  const togglePhone = async () => {
-    await api.setPhoneServer(!phoneLink);
+  const setPhone = async (enabled: boolean) => {
+    await api.setPhoneServer(enabled);
     await reloadPhone();
   };
   const resetPhoneKey = async () => {
@@ -212,14 +243,13 @@ export function SettingsPanel() {
     void i18n.changeLanguage(lang);
   };
 
-  const toggleAutostart = async () => {
-    if (autostart) {
-      await disable();
-      setAutostart(false);
-    } else {
+  const toggleAutostart = async (enabled: boolean) => {
+    if (enabled) {
       await enable();
-      setAutostart(true);
+    } else {
+      await disable();
     }
+    setAutostart(await isEnabled());
   };
 
   const saveDuration = async () => {
@@ -301,122 +331,111 @@ export function SettingsPanel() {
 
   const generalSection = (
     <>
-      <div>
-        <Label>{t("settings.language")}</Label>
+      <SettingRow icon={Languages} label={t("settings.language")}>
         <Select value={language} onValueChange={(v) => void changeLang(v)}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ru">Русский</SelectItem>
             <SelectItem value="en">English</SelectItem>
             <SelectItem value="be">Беларуская</SelectItem>
           </SelectContent>
         </Select>
-      </div>
-      <div>
-        <Label>{t("settings.timezone")}</Label>
+      </SettingRow>
+      <SettingRow icon={Globe} label={t("settings.timezone")}>
         <Select value={timezone} onValueChange={(v) => void setTimezone(v)}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
           <SelectContent>
             {COMMON_TIMEZONES.map((tz) => (
               <SelectItem key={tz} value={tz}>{tz} ({getTimezoneOffset(tz)})</SelectItem>
             ))}
           </SelectContent>
         </Select>
-      </div>
-      <div>
-        <Label>{t("settings.defaultCalendarView")}</Label>
+      </SettingRow>
+      <SettingRow icon={CalendarDays} label={t("settings.defaultCalendarView")}>
         <Select value={defaultCalendarView} onValueChange={(v) => void setDefaultCalendarView(v as CalendarView)}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="week">{t("views.week")}</SelectItem>
             <SelectItem value="month">{t("views.month")}</SelectItem>
           </SelectContent>
         </Select>
-      </div>
-      <Button variant="outline" onClick={() => void toggleAutostart()}>
-        {t("settings.autostart")}: {autostart ? t("settings.on") : t("settings.off")}
-      </Button>
+      </SettingRow>
+      <SettingRow icon={Power} label={t("settings.autostart")}>
+        <Switch checked={autostart} onCheckedChange={(v) => void toggleAutostart(v)} />
+      </SettingRow>
     </>
   );
 
   const appearanceSection = (
-    <div>
-      <Label>{t("settings.theme")}</Label>
-      <div className="flex items-center gap-3">
-        <ThemePreview theme={theme} className="w-28" />
-        <span className="text-sm font-medium">{t(`settings.themes.${theme}`)}</span>
-        <Button
-          type="button"
-          variant="outline"
-          className="ml-auto"
-          onClick={() => setThemePickerOpen(true)}
-        >
-          {t("settings.chooseTheme")}
-        </Button>
-      </div>
+    <>
+      <SettingRow icon={Palette} label={t("settings.theme")} hint={t(`settings.themes.${theme}`)}>
+        <div className="flex items-center gap-3">
+          <ThemePreview theme={theme} className="w-28" />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setThemePickerOpen(true)}
+          >
+            {t("settings.chooseTheme")}
+          </Button>
+        </div>
+      </SettingRow>
       <ThemePickerDialog open={themePickerOpen} onClose={() => setThemePickerOpen(false)} />
-    </div>
+    </>
   );
 
   const lessonsSection = (
-    <div className="rounded-lg border border-border p-3 space-y-2">
-      <Label>{t("settings.defaultDuration")}</Label>
+    <SettingRow icon={Clock} label={t("settings.defaultDuration")} hint={t("settings.durationHint")}>
       <div className="flex gap-2">
         <Input
           type="number"
           min={15}
           max={240}
+          className="w-24"
           value={durationDraft}
           onChange={(e) => setDurationDraft(e.target.value)}
         />
         <Button variant="outline" onClick={() => void saveDuration()}>{t("settings.save")}</Button>
       </div>
-      <p className="text-xs text-muted-foreground">{t("settings.durationHint")}</p>
-    </div>
+    </SettingRow>
   );
 
   const remindersSection = (
-    <div className="rounded-lg border border-border p-3 space-y-2">
-      <Label>{t("settings.defaultReminders")}</Label>
-      <div className="grid gap-2 md:grid-cols-3">
-        <div>
-          <Label className="text-xs">{t("lesson.reminderFirst")}</Label>
-          <Select value={reminder1} onValueChange={setReminder1}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {REMINDER_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs">{t("lesson.reminderSecond")}</Label>
-          <Select value={reminder2 || "__none__"} onValueChange={(v) => setReminder2(v === "__none__" ? "" : v)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">{t("settings.noSecondReminder")}</SelectItem>
-              {REMINDER_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs">{t("lesson.reminderThird")}</Label>
-          <Select value={reminder3 || "__none__"} onValueChange={(v) => setReminder3(v === "__none__" ? "" : v)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">{t("settings.noThirdReminder")}</SelectItem>
-              {REMINDER_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+    <>
+      <SettingRow icon={Bell} label={t("lesson.reminderFirst")}>
+        <Select value={reminder1} onValueChange={setReminder1}>
+          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {REMINDER_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      <SettingRow icon={Bell} label={t("lesson.reminderSecond")}>
+        <Select value={reminder2 || "__none__"} onValueChange={(v) => setReminder2(v === "__none__" ? "" : v)}>
+          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">{t("settings.noSecondReminder")}</SelectItem>
+            {REMINDER_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      <SettingRow icon={Bell} label={t("lesson.reminderThird")}>
+        <Select value={reminder3 || "__none__"} onValueChange={(v) => setReminder3(v === "__none__" ? "" : v)}>
+          <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">{t("settings.noThirdReminder")}</SelectItem>
+            {REMINDER_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={String(o.value)}>{t(o.key)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
       <Button variant="outline" onClick={() => void saveReminders()}>{t("settings.saveReminders")}</Button>
-    </div>
+    </>
   );
 
   const templatesSection = (
@@ -469,11 +488,19 @@ export function SettingsPanel() {
   const integrationsSection = (
     <>
       <div className="rounded-lg border border-border p-3 space-y-2">
-        <Label>{t("settings.phoneTitle")}</Label>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Label>{t("settings.phoneTitle")}</Label>
+            {phoneLink && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-500">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {t("settings.phoneRunning")} · :{new URL(phoneLink).port}
+              </span>
+            )}
+          </div>
+          <Switch checked={!!phoneLink} onCheckedChange={(v) => void setPhone(v)} />
+        </div>
         <p className="text-xs text-muted-foreground">{t("settings.phoneHint")}</p>
-        <Button variant="outline" onClick={() => void togglePhone()}>
-          {t("settings.phoneToggle")}: {phoneLink ? t("settings.on") : t("settings.off")}
-        </Button>
         {phoneLink && (
           <>
             {phoneLinks.length > 1 && (
@@ -507,8 +534,29 @@ export function SettingsPanel() {
       </div>
 
       <div className="rounded-lg border border-border p-3 space-y-2">
-        <Label>{t("settings.tgTitle")}</Label>
+        <div className="flex items-center gap-2">
+          <Label>{t("settings.tgTitle")}</Label>
+          <span
+            className={cn(
+              "ml-auto inline-flex items-center gap-1.5 text-xs",
+              tgState?.linked ? "text-emerald-500" : "text-muted-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "h-2 w-2 rounded-full",
+                tgState?.linked ? "bg-emerald-500" : "bg-muted-foreground/40",
+              )}
+            />
+            {tgState?.linked
+              ? t("settings.tgStatusLinked", { user: tgState.username || tgUsername || "bot" })
+              : t("settings.tgStatusOff")}
+          </span>
+        </div>
         <p className="text-xs text-muted-foreground">{t("settings.tgHint")}</p>
+        {tgState?.lastError && (
+          <p className="rounded bg-red-500/10 px-2 py-1.5 text-xs text-red-500">{tgState.lastError}</p>
+        )}
         {!tgState?.linked ? (
           <>
             <div className="flex gap-2">
@@ -533,12 +581,9 @@ export function SettingsPanel() {
             )}
           </>
         ) : (
-          <div className="space-y-2">
-            <p className="text-sm text-emerald-500">✔ {t("settings.tgLinked")} @{tgUsername || "bot"}</p>
-            <div className="flex gap-2">
-              <Button variant="ghost" size="sm" onClick={() => void tgTest()}>{t("settings.tgTest")}</Button>
-              <Button variant="ghost" size="sm" onClick={() => void tgDisconnect()}>{t("settings.tgDisconnect")}</Button>
-            </div>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={() => void tgTest()}>{t("settings.tgTest")}</Button>
+            <Button variant="ghost" size="sm" onClick={() => void tgDisconnect()}>{t("settings.tgDisconnect")}</Button>
           </div>
         )}
         {tgError && <p className="text-xs text-red-500">{tgError}</p>}
