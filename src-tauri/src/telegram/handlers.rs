@@ -123,7 +123,7 @@ pub fn day_actions_markup(_t: &T, conn: &Connection, occs: &[Occ], tz: chrono_tz
     let mut rows: Vec<Value> = Vec::new();
     for o in occs.iter().filter(|o| o.status == "scheduled").take(8) {
         let r = create_ref(conn, &o.id);
-        let cb = |a: &str| format!(r#"{{"a":"{a}","r":{r}}}"#);
+        let cb = |a: &str| format!(r#"{{"a":"{a}","r":{r},"k":"d"}}"#);
         let hhmm = o.start_utc.with_timezone(&tz).format("%H:%M");
         rows.push(json!([
             { "text": format!("{hhmm} ✅"), "callback_data": cb("c") },
@@ -574,19 +574,20 @@ async fn handle_callback(bot: &Bot, cb: CallbackQuery) -> Result<(), String> {
             bot.send(chat_id, t.settings(), None, true).await?;
         }
         "x" => {
-            // Cancel confirmation prompt.
-            bot.answer_callback(&cb.id, None).await?;
+            // Cancel confirmation: swap the buttons, keep the card visible.
+            bot.answer_callback(&cb.id, Some(t.confirm_cancel())).await?;
             let r = d.r.unwrap_or_default();
+            let k = d.k.as_deref().unwrap_or("");
             let markup = json!({ "inline_keyboard": [[
-                { "text": t.yes(), "callback_data": format!(r#"{{"a":"X","r":{r}}}"#) },
-                { "text": t.back(), "callback_data": format!(r#"{{"a":"b","r":{r}}}"#) },
+                { "text": t.yes(), "callback_data": format!(r#"{{"a":"X","r":{r},"k":"{k}"}}"#) },
+                { "text": t.back(), "callback_data": format!(r#"{{"a":"b","r":{r},"k":"{k}"}}"#) },
             ]]});
-            bot.edit_text(chat_id, msg_id, t.confirm_cancel(), Some(markup)).await?;
+            bot.edit_markup(chat_id, msg_id, Some(markup)).await?;
         }
         "b" => {
             bot.answer_callback(&cb.id, None).await?;
             if let Some(occ_id) = resolve_ref(&conn, d.r.unwrap_or_default()) {
-                bot.edit_markup(chat_id, msg_id, Some(actions_markup(&t, &conn, &occ_id))).await?;
+                bot.edit_markup(chat_id, msg_id, restore_actions_markup(&t, &conn, &occ_id, d.k.as_deref())).await?;
             }
         }
         "X" | "c" | "n" | "p" => {
@@ -596,12 +597,13 @@ async fn handle_callback(bot: &Bot, cb: CallbackQuery) -> Result<(), String> {
                 "p" => "paid",
                 _ => "cancelled",
             };
-            let applied = match resolve_ref(&conn, d.r.unwrap_or_default()) {
-                Some(occ) => apply_action(&conn, &occ, action)?,
+            let occ_id = resolve_ref(&conn, d.r.unwrap_or_default());
+            let applied = match occ_id.as_deref() {
+                Some(occ) => apply_action(&conn, occ, action)?,
                 None => None,
             };
             match applied {
-                Some((_, name)) => {
+                Some((row_id, name)) => {
                     let toast = match action {
                         "completed" => t.done_marked(),
                         "no_show" => t.no_show_marked(),
@@ -609,8 +611,28 @@ async fn handle_callback(bot: &Bot, cb: CallbackQuery) -> Result<(), String> {
                         _ => t.cancelled_marked(),
                     };
                     bot.answer_callback(&cb.id, Some(toast)).await?;
-                    let prev = cb.message.and_then(|m| m.text).unwrap_or_default();
-                    bot.edit_text(chat_id, msg_id, &format!("{}\n\n{} — {}", prev, name, toast), None).await.ok();
+                    let tz = occurrences::timezone(&conn);
+                    if d.k.as_deref() == Some("d") {
+                        // Multi-lesson day list: re-render it with fresh statuses.
+                        if let Some(date) = occ_id.as_deref().and_then(|o| occ_local_date(&conn, o, tz)) {
+                            let occs = day_occurrences(&conn, date)?;
+                            let today = Utc::now().with_timezone(&tz).date_naive();
+                            let title = if date == today {
+                                t.today()
+                            } else if date == today + Duration::days(1) {
+                                t.tomorrow()
+                            } else {
+                                ""
+                            };
+                            let fields = field_flags(&conn);
+                            let text = day_message(&t, date, &occs, tz, &fields, title);
+                            bot.edit_text(chat_id, msg_id, &text, day_actions_markup(&t, &conn, &occs, tz)).await.ok();
+                        }
+                    } else {
+                        // Single-lesson reminder: collapse to the final state.
+                        let text = result_text(&t, &conn, &row_id, &name, action, tz);
+                        bot.edit_text(chat_id, msg_id, &text, None).await.ok();
+                    }
                 }
                 None => {
                     bot.answer_callback(&cb.id, Some("?")).await?;
@@ -622,6 +644,63 @@ async fn handle_callback(bot: &Bot, cb: CallbackQuery) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Local date of an occurrence id: `parent@YYYYMMDD` parses directly,
+/// plain row ids resolve via `lessons.start_at`.
+fn occ_local_date(conn: &Connection, occ_id: &str, tz: chrono_tz::Tz) -> Option<NaiveDate> {
+    if let Some((_, ymd)) = occ_id.split_once('@') {
+        return NaiveDate::parse_from_str(ymd, "%Y%m%d").ok();
+    }
+    let start: String = conn
+        .query_row("SELECT start_at FROM lessons WHERE id = ?1", params![occ_id], |r| r.get(0))
+        .ok()?;
+    start.parse::<chrono::DateTime<Utc>>().ok().map(|dt| dt.with_timezone(&tz).date_naive())
+}
+
+/// Rebuilds the buttons of the message a callback belongs to: the full
+/// day-list rows for `k == "d"`, the 4-button reminder set otherwise.
+fn restore_actions_markup(t: &T, conn: &Connection, occ_id: &str, k: Option<&str>) -> Option<Value> {
+    if k == Some("d") {
+        let tz = occurrences::timezone(conn);
+        let date = occ_local_date(conn, occ_id, tz)?;
+        let occs = day_occurrences(conn, date).ok()?;
+        day_actions_markup(t, conn, &occs, tz)
+    } else {
+        Some(actions_markup(t, conn, occ_id))
+    }
+}
+
+/// Final state a reminder message collapses to after an inline action:
+/// bold status line plus a compact `HH:MM–HH:MM · Name · Subject` card.
+fn result_text(t: &T, conn: &Connection, row_id: &str, name: &str, action: &str, tz: chrono_tz::Tz) -> String {
+    let label = match action {
+        "completed" => t.done(),
+        "no_show" => t.no_show(),
+        "paid" => t.paid(),
+        _ => t.cancelled_done(),
+    };
+    let mut card = format!("<b>{label}</b>\n<b>{}</b>", esc(name));
+    if let Ok((start, dur, subject)) = conn.query_row(
+        "SELECT start_at, duration_minutes, subject FROM lessons WHERE id = ?1",
+        params![row_id],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)),
+    ) {
+        if let Ok(st) = start.parse::<chrono::DateTime<Utc>>() {
+            let s = st.with_timezone(&tz);
+            let e = s + Duration::minutes(dur);
+            card = format!(
+                "<b>{label}</b>\n<code>{}–{}</code> · <b>{}</b>",
+                s.format("%H:%M"),
+                e.format("%H:%M"),
+                esc(name),
+            );
+            if !subject.is_empty() {
+                card.push_str(&format!("\n{}", esc(&subject)));
+            }
+        }
+    }
+    card
 }
 
 /// Applies a button action to a lesson (materializing series instances).
@@ -667,11 +746,9 @@ fn apply_action(conn: &Connection, occ_id: &str, action: &str) -> Result<Option<
 }
 
 pub fn reminder_text(t: &T, o: &Occ, tz: chrono_tz::Tz, fields: &[String], minutes_before: i64) -> String {
-    let mut s = format!(
-        "<b>🔔 {} — {}</b>\n",
-        t.lesson_soon(),
-        t.remind_in(minutes_before / 60, minutes_before % 60),
-    );
-    s.push_str(&lesson_card(t, o, tz, fields));
-    s
+    format!(
+        "<b>🔔 {}</b>\n{}",
+        t.reminder_title(minutes_before / 60, minutes_before % 60),
+        lesson_card(t, o, tz, fields),
+    )
 }

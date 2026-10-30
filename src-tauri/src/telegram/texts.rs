@@ -11,6 +11,19 @@ pub fn lang(code: &str) -> L {
     }
 }
 
+/// Slavic plural rule (ru/be): 1 → one, 2–4 → few, else many.
+fn slav(n: i64, one: &'static str, few: &'static str, many: &'static str) -> &'static str {
+    let n = n.rem_euclid(100);
+    if (11..=14).contains(&n) {
+        return many;
+    }
+    match n % 10 {
+        1 => one,
+        2..=4 => few,
+        _ => many,
+    }
+}
+
 pub struct T(pub L);
 impl T {
     fn s(&self, ru: &'static str, en: &'static str, be: &'static str) -> &'static str {
@@ -41,14 +54,48 @@ impl T {
     pub fn no_show_marked(&self) -> &'static str { self.s("Отмечено: не состоялось ❌", "Marked as no-show ❌", "Адзначана: не адбылося ❌") }
     pub fn paid_marked(&self) -> &'static str { self.s("Оплата отмечена 💰", "Marked as paid 💰", "Аплата адзначана 💰") }
     pub fn cancelled_marked(&self) -> &'static str { self.s("Занятие отменено 🚫", "Lesson cancelled 🚫", "Занятак адменены 🚫") }
-    pub fn remind_in(&self, h: i64, m: i64) -> String {
+    /// "Занятие через 1 час" / "Lesson in 30 minutes" / "Занятак праз 2 гадзіны".
+    pub fn reminder_title(&self, h: i64, m: i64) -> String {
         match self.0 {
-            L::Ru => format!("через {}", if h > 0 { format!("{h} ч") } else { format!("{m} мин") }),
-            L::En => format!("in {}", if h > 0 { format!("{h}h") } else { format!("{m}m") }),
-            L::Be => format!("праз {}", if h > 0 { format!("{h} г") } else { format!("{m} хв") }),
+            L::Ru => {
+                let span = if h >= 24 {
+                    "сутки".to_string()
+                } else if h > 0 && m > 0 {
+                    format!("{h} ч {m} мин")
+                } else if h > 0 {
+                    format!("{h} {}", slav(h, "час", "часа", "часов"))
+                } else {
+                    format!("{m} {}", slav(m, "минуту", "минуты", "минут"))
+                };
+                format!("Занятие через {span}")
+            }
+            L::En => {
+                let span = if h >= 24 {
+                    "24 hours".to_string()
+                } else if h > 0 && m > 0 {
+                    format!("{h}h {m}m")
+                } else if h > 0 {
+                    format!("{h} hour{}", if h == 1 { "" } else { "s" })
+                } else {
+                    format!("{m} minute{}", if m == 1 { "" } else { "s" })
+                };
+                format!("Lesson in {span}")
+            }
+            L::Be => {
+                let span = if h >= 24 {
+                    "суткі".to_string()
+                } else if h > 0 && m > 0 {
+                    format!("{h} г {m} хв")
+                } else if h > 0 {
+                    format!("{h} {}", slav(h, "гадзіну", "гадзіны", "гадзін"))
+                } else {
+                    format!("{m} {}", slav(m, "хвіліну", "хвіліны", "хвілін"))
+                };
+                format!("Занятак праз {span}")
+            }
         }
     }
-    pub fn lesson_soon(&self) -> &'static str { self.s("Скоро занятие", "Lesson soon", "Хутка занятак") }
+    pub fn cancelled_done(&self) -> &'static str { self.s("🚫 Отменено", "🚫 Cancelled", "🚫 Адменена") }
     pub fn lesson_now(&self) -> &'static str { self.s("Занятие сейчас", "Lesson starting now", "Занятак зараз") }
     pub fn field_student(&self) -> &'static str { self.s("Ученик", "Student", "Вучань") }
     pub fn field_time(&self) -> &'static str { self.s("Время", "Time", "Час") }

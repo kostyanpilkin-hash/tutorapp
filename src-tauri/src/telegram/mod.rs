@@ -213,6 +213,8 @@ pub struct CallbackData {
     pub a: String,
     pub r: Option<i64>,
     pub v: Option<String>,
+    /// Message kind: `"d"` marks buttons of a multi-lesson day list.
+    pub k: Option<String>,
 }
 
 pub fn parse_callback(data: &str) -> Option<CallbackData> {
