@@ -91,101 +91,9 @@ export function parseLocalDateTime(date: string, time: string): Date {
   return new Date(y, m - 1, d, hh, mm ?? 0, 0, 0);
 }
 
-function sameInstant(a: string, b: Date | string): boolean {
-  return new Date(a).getTime() === new Date(b).getTime();
-}
-
-/** Prefer newest exception when several were mistakenly created for one slot. */
-function pickException(exceptions: Lesson[], occurrence: Date): Lesson | undefined {
-  const matches = exceptions.filter(
-    (e) => e.recurrenceInstanceDate && sameInstant(e.recurrenceInstanceDate, occurrence),
-  );
-  if (matches.length === 0) return undefined;
-  const rank = (status: string) => {
-    if (status === "completed") return 4;
-    if (status === "no_show") return 3;
-    if (status === "cancelled") return 2;
-    return 1;
-  };
-  return matches.sort((a, b) => {
-    const byStatus = rank(b.status) - rank(a.status);
-    if (byStatus !== 0) return byStatus;
-    return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
-  })[0];
-}
-
 function matchesWeekday(day: Date, bydays: number[], anchorWeekday: number): boolean {
   if (bydays.length === 0) return day.getDay() === anchorWeekday;
   return bydays.includes(day.getDay());
-}
-
-function expandWeekly(
-  lesson: Lesson,
-  from: Date,
-  to: Date,
-  allLessons: Lesson[],
-): { items: Lesson[]; usedExceptionIds: Set<string> } {
-  const anchor = new Date(lesson.startAt);
-  const hours = anchor.getHours();
-  const minutes = anchor.getMinutes();
-  const until = parseUntil(lesson.recurrenceRule);
-  const count = parseCount(lesson.recurrenceRule);
-  const bydays = parseByday(lesson.recurrenceRule);
-  const anchorWeekday = anchor.getDay();
-
-  const exceptions = allLessons.filter(
-    (l) => l.recurrenceParentId === lesson.id && l.recurrenceInstanceDate,
-  );
-
-  const items: Lesson[] = [];
-  const usedExceptionIds = new Set<string>();
-  let cursor = startOfDay(anchor);
-  let emitted = 0;
-  // Safety: never walk more than ~5 years day-by-day
-  const hardLimit = addDays(anchor, 366 * 5);
-
-  while (cursor <= to && cursor <= hardLimit) {
-    if (matchesWeekday(cursor, bydays, anchorWeekday)) {
-      const occurrence = new Date(cursor);
-      occurrence.setHours(hours, minutes, 0, 0);
-      if (occurrence.getTime() < anchor.getTime() - 1000) {
-        cursor = addDays(cursor, 1);
-        continue;
-      }
-      emitted += 1;
-      if (count != null && emitted > count) break;
-      if (until && occurrence.getTime() >= until.getTime()) break;
-
-      if (occurrence >= from && occurrence <= to) {
-        const matches = exceptions.filter(
-          (e) => e.recurrenceInstanceDate && sameInstant(e.recurrenceInstanceDate, occurrence),
-        );
-        for (const m of matches) usedExceptionIds.add(m.id);
-
-        const exception = pickException(exceptions, occurrence);
-        const instanceKey = occurrence.toISOString();
-
-        if (exception) {
-          // Slot is overridden. Show the exception only if it still falls in this window
-          // (a drag-moved exception keeps recurrenceInstanceDate on the old day but startAt on the new day).
-          if (exception.status !== "cancelled") {
-            const exStart = new Date(exception.startAt);
-            if (exStart >= from && exStart <= to) items.push(exception);
-          }
-        } else {
-          items.push({
-            ...lesson,
-            id: `${lesson.id}::${instanceKey}`,
-            startAt: instanceKey,
-            recurrenceInstanceDate: instanceKey,
-          });
-        }
-      }
-    }
-    cursor = addDays(cursor, 1);
-  }
-
-  return { items, usedExceptionIds };
 }
 
 /** Count occurrences of a weekly rule at or after fromDate (inclusive), honoring COUNT/UNTIL. */
@@ -225,42 +133,6 @@ export function countWeeklyOccurrencesFrom(
   return remaining;
 }
 
-export function expandLessons(lessons: Lesson[], from: Date, to: Date): Lesson[] {
-  const result: Lesson[] = [];
-  const usedExceptionIds = new Set<string>();
-
-  for (const lesson of lessons) {
-    if (lesson.recurrenceParentId) continue;
-
-    const start = new Date(lesson.startAt);
-
-    if (!isWeeklyRecurrence(lesson.recurrenceRule)) {
-      if (start >= from && start <= to) result.push(lesson);
-      continue;
-    }
-
-    const expanded = expandWeekly(lesson, from, to, lessons);
-    for (const id of expanded.usedExceptionIds) usedExceptionIds.add(id);
-    result.push(...expanded.items);
-  }
-
-  // Exceptions moved away from the series slot but still inside the visible range.
-  for (const lesson of lessons) {
-    if (!lesson.recurrenceParentId) continue;
-    if (usedExceptionIds.has(lesson.id)) continue;
-    if (lesson.status === "cancelled") continue;
-    const start = new Date(lesson.startAt);
-    if (start >= from && start <= to) result.push(lesson);
-  }
-
-  return result
-    .filter((l) => {
-      const start = new Date(l.startAt);
-      return start >= from && start <= to;
-    })
-    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
-}
-
 export function defaultRange(view: string, anchor: Date): { from: Date; to: Date } {
   switch (view) {
     case "day":
@@ -279,31 +151,12 @@ export function defaultRange(view: string, anchor: Date): { from: Date; to: Date
   }
 }
 
-// localStorage flag `fe.expand=local` forces the legacy frontend expansion.
-const LOCAL_EXPAND_FLAG = "fe.expand";
-
-export function useLocalExpand(): boolean {
-  try {
-    return localStorage.getItem(LOCAL_EXPAND_FLAG) === "local";
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Expanded occurrences for `[from, to]` — backend expansion by default
- * (single source of truth with the bot/phone page), local `expandLessons`
- * as a fallback via the flag or if the backend call fails.
+ * Expanded occurrences for `[from, to]` — expanded on the backend
+ * (single source of truth with the bot/phone page).
  */
 export async function loadExpandedLessons(from: Date, to: Date): Promise<Lesson[]> {
-  if (!useLocalExpand()) {
-    try {
-      return await api.getExpandedLessons(from.toISOString(), to.toISOString());
-    } catch (e) {
-      console.warn("Backend expansion failed, falling back to local", e);
-    }
-  }
-  return expandLessons(await api.getLessons(from.toISOString(), to.toISOString()), from, to);
+  return api.getExpandedLessons(from.toISOString(), to.toISOString());
 }
 
 export function realLessonId(id: string): string {

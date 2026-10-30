@@ -15,11 +15,145 @@ import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { addDays, startOfDay } from "date-fns";
 import type { Lesson } from "@/types/lesson";
 
 vi.mock("@/lib/api", () => ({ api: {} }));
 
-import { expandLessons } from "@/lib/recurrence";
+import { isWeeklyRecurrence, parseByday, parseCount, parseUntil } from "@/lib/recurrence";
+
+// ── Frozen reference: the legacy frontend expander (removed in G1-4b) ──
+// Kept ONLY as the parity oracle for `occurrences::collect`.
+// Production code must not import or copy this — the backend is the
+// single source of truth now.
+
+function sameInstant(a: string, b: Date | string): boolean {
+  return new Date(a).getTime() === new Date(b).getTime();
+}
+
+function pickException(exceptions: Lesson[], occurrence: Date): Lesson | undefined {
+  const matches = exceptions.filter(
+    (e) => e.recurrenceInstanceDate && sameInstant(e.recurrenceInstanceDate, occurrence),
+  );
+  if (matches.length === 0) return undefined;
+  const rank = (status: string) => {
+    if (status === "completed") return 4;
+    if (status === "no_show") return 3;
+    if (status === "cancelled") return 2;
+    return 1;
+  };
+  return matches.sort((a, b) => {
+    const byStatus = rank(b.status) - rank(a.status);
+    if (byStatus !== 0) return byStatus;
+    return new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime();
+  })[0];
+}
+
+function matchesWeekday(day: Date, bydays: number[], anchorWeekday: number): boolean {
+  if (bydays.length === 0) return day.getDay() === anchorWeekday;
+  return bydays.includes(day.getDay());
+}
+
+function expandWeekly(
+  lesson: Lesson,
+  from: Date,
+  to: Date,
+  allLessons: Lesson[],
+): { items: Lesson[]; usedExceptionIds: Set<string> } {
+  const anchor = new Date(lesson.startAt);
+  const hours = anchor.getHours();
+  const minutes = anchor.getMinutes();
+  const until = parseUntil(lesson.recurrenceRule);
+  const count = parseCount(lesson.recurrenceRule);
+  const bydays = parseByday(lesson.recurrenceRule);
+  const anchorWeekday = anchor.getDay();
+
+  const exceptions = allLessons.filter(
+    (l) => l.recurrenceParentId === lesson.id && l.recurrenceInstanceDate,
+  );
+
+  const items: Lesson[] = [];
+  const usedExceptionIds = new Set<string>();
+  let cursor = startOfDay(anchor);
+  let emitted = 0;
+  const hardLimit = addDays(anchor, 366 * 5);
+
+  while (cursor <= to && cursor <= hardLimit) {
+    if (matchesWeekday(cursor, bydays, anchorWeekday)) {
+      const occurrence = new Date(cursor);
+      occurrence.setHours(hours, minutes, 0, 0);
+      if (occurrence.getTime() < anchor.getTime() - 1000) {
+        cursor = addDays(cursor, 1);
+        continue;
+      }
+      emitted += 1;
+      if (count != null && emitted > count) break;
+      if (until && occurrence.getTime() >= until.getTime()) break;
+
+      if (occurrence >= from && occurrence <= to) {
+        const matches = exceptions.filter(
+          (e) => e.recurrenceInstanceDate && sameInstant(e.recurrenceInstanceDate, occurrence),
+        );
+        for (const m of matches) usedExceptionIds.add(m.id);
+
+        const exception = pickException(exceptions, occurrence);
+        const instanceKey = occurrence.toISOString();
+
+        if (exception) {
+          if (exception.status !== "cancelled") {
+            const exStart = new Date(exception.startAt);
+            if (exStart >= from && exStart <= to) items.push(exception);
+          }
+        } else {
+          items.push({
+            ...lesson,
+            id: `${lesson.id}::${instanceKey}`,
+            startAt: instanceKey,
+            recurrenceInstanceDate: instanceKey,
+          });
+        }
+      }
+    }
+    cursor = addDays(cursor, 1);
+  }
+
+  return { items, usedExceptionIds };
+}
+
+function expandLessons(lessons: Lesson[], from: Date, to: Date): Lesson[] {
+  const result: Lesson[] = [];
+  const usedExceptionIds = new Set<string>();
+
+  for (const lesson of lessons) {
+    if (lesson.recurrenceParentId) continue;
+
+    const start = new Date(lesson.startAt);
+
+    if (!isWeeklyRecurrence(lesson.recurrenceRule)) {
+      if (start >= from && start <= to) result.push(lesson);
+      continue;
+    }
+
+    const expanded = expandWeekly(lesson, from, to, lessons);
+    for (const id of expanded.usedExceptionIds) usedExceptionIds.add(id);
+    result.push(...expanded.items);
+  }
+
+  for (const lesson of lessons) {
+    if (!lesson.recurrenceParentId) continue;
+    if (usedExceptionIds.has(lesson.id)) continue;
+    if (lesson.status === "cancelled") continue;
+    const start = new Date(lesson.startAt);
+    if (start >= from && start <= to) result.push(lesson);
+  }
+
+  return result
+    .filter((l) => {
+      const start = new Date(l.startAt);
+      return start >= from && start <= to;
+    })
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+}
 
 interface DumpRange {
   name: string;
