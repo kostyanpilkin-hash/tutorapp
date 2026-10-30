@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Calendar,
   History,
@@ -15,6 +16,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { keys, invalidateAppData } from "@/lib/queryKeys";
 import { useToastStore } from "@/stores/toastStore";
 import { cn } from "@/lib/utils";
 import type { ActivityLogEntry } from "@/types/student";
@@ -67,11 +69,21 @@ function fmtShortDate(v: string, locale: string): string {
 
 export function HistoryPanel() {
   const { t, i18n } = useTranslation();
-  const [entries, setEntries] = useState<ActivityLogEntry[]>([]);
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<CategoryFilter>("all");
   const [openId, setOpenId] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+
+  const logQuery = useInfiniteQuery({
+    queryKey: keys.activity(filter),
+    queryFn: ({ pageParam }) =>
+      api.getActivityLog(filter === "all" ? undefined : filter, PAGE, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === PAGE ? allPages.length * PAGE : undefined,
+  });
+  const entries = logQuery.data?.pages.flat() ?? [];
+  const hasMore = !!logQuery.hasNextPage;
 
   const virtualizer = useVirtualizer({
     count: entries.length,
@@ -89,25 +101,11 @@ export function HistoryPanel() {
     return v;
   };
 
-  const load = useCallback(async (offset = 0) => {
-    const rows = await api.getActivityLog(
-      filter === "all" ? undefined : filter,
-      PAGE,
-      offset,
-    );
-    setEntries((prev) => (offset === 0 ? rows : [...prev, ...rows]));
-    setHasMore(rows.length === PAGE);
-  }, [filter]);
-
-  useEffect(() => {
-    void load(0);
-  }, [load]);
-
   const undo = async (entry: ActivityLogEntry) => {
     if (!entry.details) return;
     try {
       await api.restoreLessonArchive(entry.details);
-      await load(0);
+      await invalidateAppData(queryClient);
     } catch {
       useToastStore.getState().error(t("lesson.undoFailed"));
     }
@@ -231,7 +229,7 @@ export function HistoryPanel() {
         </div>
         {hasMore && (
           <button
-            onClick={() => void load(entries.length)}
+            onClick={() => void logQuery.fetchNextPage()}
             className="mx-auto mt-2 block rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
           >
             {t("history.loadMore")}

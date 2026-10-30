@@ -21,13 +21,21 @@ export const keys = {
       ["finance", "report", period, anchorISO, customFromISO ?? "", customToISO ?? ""] as const,
     debts: () => ["finance", "debts"] as const,
   },
-  activity: (category: string, offset: number) => ["activity", category, offset] as const,
-  reminders: () => ["reminders", "fired"] as const,
+  activity: (category: string) => ["activity", category] as const,
+  reminders: {
+    fired: () => ["reminders", "fired"] as const,
+  },
   settings: () => ["settings"] as const,
 };
 
 /** Префиксы, которые покрывают все пользовательские данные приложения. */
-const DATA_PREFIXES = [["lessons"], ["finance"], ["students"], ["activity"]] as const;
+const DATA_PREFIXES = [
+  ["lessons"],
+  ["finance"],
+  ["students"],
+  ["activity"],
+  ["reminders"],
+] as const;
 
 /**
  * Инвалидация после любой мутации пользовательских данных

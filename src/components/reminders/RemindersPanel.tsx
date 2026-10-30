@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { addDays, format, parseISO } from "date-fns";
+import { addDays, format, parseISO, startOfDay } from "date-fns";
 import { enUS, ru, be as beLocale } from "date-fns/locale";
 import type { Lesson } from "@/types/lesson";
-import type { FiredReminderEntry } from "@/lib/api";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { loadExpandedLessons } from "@/lib/recurrence";
+import { keys } from "@/lib/queryKeys";
 import { useShallow } from "zustand/react/shallow";
 import { useToastStore } from "@/stores/toastStore";
 import { Button } from "@/components/ui/button";
@@ -73,35 +74,43 @@ export function RemindersPanel() {
   const toast = useToastStore(
     useShallow((s) => ({ error: s.error, info: s.info, success: s.success })),
   );
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"upcoming" | "journal">("upcoming");
-  const [upcoming, setUpcoming] = useState<UpcomingReminderEntry[]>([]);
-  const [journal, setJournal] = useState<FiredReminderEntry[]>([]);
-  const [loading, setLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Окно «сегодня → +7д» — стабильно в рамках дня для ключа запроса
+  const [windowBounds] = useState(() => ({
+    from: startOfDay(new Date()),
+    to: addDays(new Date(), 7),
+  }));
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const now = new Date();
-      const from = now;
-      const to = addDays(now, 7);
-      const [expandedRows, firedRows, settings] = await Promise.all([
-        loadExpandedLessons(from, to),
-        api.getFiredReminders(100),
-        api.getSettings(),
-      ]);
-      const snoozeMap = parseSnoozeMap(settings.reminder_snooze);
-      const expanded = expandedRows.filter((lesson) => lesson.status === "scheduled");
-      setUpcoming(buildUpcomingReminders(expanded, snoozeMap, now));
-      setJournal(firedRows);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const expandedQuery = useQuery({
+    queryKey: keys.lessons.range(
+      windowBounds.from.toISOString(),
+      windowBounds.to.toISOString(),
+    ),
+    queryFn: () => loadExpandedLessons(windowBounds.from, windowBounds.to),
+  });
+  const journalQuery = useQuery({
+    queryKey: keys.reminders.fired(),
+    queryFn: () => api.getFiredReminders(100),
+  });
+  const settingsQuery = useQuery({
+    queryKey: keys.settings(),
+    queryFn: () => api.getSettings(),
+  });
 
-  useEffect(() => {
-    void loadData();
-  }, [loadData]);
+  const upcoming = useMemo(() => {
+    const snoozeMap = parseSnoozeMap(settingsQuery.data?.reminder_snooze);
+    const expanded = (expandedQuery.data ?? []).filter(
+      (lesson) => lesson.status === "scheduled",
+    );
+    return buildUpcomingReminders(expanded, snoozeMap, new Date());
+  }, [expandedQuery.data, settingsQuery.data]);
+  const journal = journalQuery.data ?? [];
+  const loading =
+    expandedQuery.isPending || journalQuery.isPending || settingsQuery.isPending;
+
+  const reload = () => void queryClient.invalidateQueries();
 
   const upcomingCount = useMemo(() => upcoming.length, [upcoming.length]);
 
@@ -111,7 +120,10 @@ export function RemindersPanel() {
     try {
       await api.snoozeReminder(item.lessonId, item.instanceStart, item.minutesBefore, 10);
       toast.success(t("reminders.snoozed"));
-      await loadData();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["reminders"] }),
+      ]);
     } finally {
       setBusyKey(null);
     }
@@ -124,7 +136,7 @@ export function RemindersPanel() {
           <h2 className="text-lg font-semibold">{t("reminders.title")}</h2>
           <p className="text-sm text-muted-foreground">{t("reminders.subtitle")}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
           {t("reminders.refresh")}
         </Button>
       </div>
