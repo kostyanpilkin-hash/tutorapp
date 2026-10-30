@@ -96,6 +96,16 @@ impl T {
         }
     }
     pub fn cancelled_done(&self) -> &'static str { self.s("🚫 Отменено", "🚫 Cancelled", "🚫 Адменена") }
+    /// "{n} занятий" / "{n} lessons" / "{n} заняткаў" with proper plurals.
+    pub fn lessons_count(&self, n: i64) -> String {
+        match self.0 {
+            L::Ru => format!("{n} {}", slav(n, "занятие", "занятия", "занятий")),
+            L::En => format!("{n} lesson{}", if n == 1 { "" } else { "s" }),
+            L::Be => format!("{n} {}", slav(n, "занятак", "заняткі", "заняткаў")),
+        }
+    }
+    pub fn total_label(&self) -> &'static str { self.s("Итого", "Total", "Разам") }
+    pub fn grand_total(&self) -> &'static str { self.s("Всего", "Grand total", "Усяго") }
     pub fn lesson_now(&self) -> &'static str { self.s("Занятие сейчас", "Lesson starting now", "Занятак зараз") }
     pub fn field_student(&self) -> &'static str { self.s("Ученик", "Student", "Вучань") }
     pub fn field_time(&self) -> &'static str { self.s("Время", "Time", "Час") }

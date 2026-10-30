@@ -524,10 +524,43 @@ fn debts_message(t: &T, conn: &Connection) -> Result<String, String> {
     if rows.is_empty() {
         return Ok(t.no_debts().to_string());
     }
-    let mut s = format!("<b>{}</b>\n", t.debts());
+    // Group currency rows by student, preserving the query's name order.
+    let mut students: Vec<(String, Vec<(i64, f64, String)>)> = Vec::new();
     for (name, n, sum, cur) in rows {
-        s.push_str(&format!("💸 <b>{}</b>\n    {} × · {} {}\n", esc(&name), n, sum, esc(&cur)));
+        match students.iter_mut().find(|(sn, _)| *sn == name) {
+            Some((_, v)) => v.push((n, sum, cur)),
+            None => students.push((name, vec![(n, sum, cur)])),
+        }
     }
+    let join_amounts = |amounts: &[(String, f64)]| -> String {
+        amounts
+            .iter()
+            .map(|(cur, sum)| format!("{} {}", sum, esc(cur)))
+            .collect::<Vec<_>>()
+            .join(" + ")
+    };
+    let mut s = format!("<b>{}</b>\n", t.debts());
+    let mut grand: Vec<(String, f64)> = Vec::new();
+    for (name, items) in &students {
+        s.push_str(&format!("\n<b>{}</b>\n<pre>", esc(name)));
+        let counts: Vec<String> = items.iter().map(|(n, _, _)| t.lessons_count(*n)).collect();
+        let cw = counts.iter().map(|c| c.chars().count()).max().unwrap_or(0);
+        let amounts: Vec<String> = items.iter().map(|(_, sum, cur)| format!("{} {}", sum, esc(cur))).collect();
+        let aw = amounts.iter().map(|a| a.chars().count()).max().unwrap_or(0);
+        let mut per_student: Vec<(String, f64)> = Vec::new();
+        for (i, (_, sum, cur)) in items.iter().enumerate() {
+            s.push_str(&format!("\n {:<cw$}  {:>aw$}", counts[i], amounts[i]));
+            for acc in [&mut per_student, &mut grand] {
+                match acc.iter_mut().find(|(c, _)| c == cur) {
+                    Some((_, v)) => *v += sum,
+                    None => acc.push((cur.clone(), *sum)),
+                }
+            }
+        }
+        s.push_str("</pre>\n");
+        s.push_str(&format!("<b>{}: {}</b>\n", t.total_label(), join_amounts(&per_student)));
+    }
+    s.push_str(&format!("\n<b>{}: {}</b>", t.grand_total(), join_amounts(&grand)));
     Ok(s)
 }
 
