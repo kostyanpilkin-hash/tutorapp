@@ -18,8 +18,8 @@
 
 Все `useXStore()` без селектора сужены: App (settings+lessons через `useShallow`), SettingsPanel, LessonFormDialog, CalendarViews/StudentsPanel (`s => s.timezone`), toast в 3 панелях (`useShallow` методов). Reschedule-диалоги не тронуты — используют все поля.
 
-## 5. Далее (крупное)
+## 5. Далее (крупное) — планы готовы, порядок: 1→2→3
 
-- specta/ts-rs — типизация IPC из Rust-моделей.
-- Нормализация `student_name` (денормализована в lessons) — с миграцией и бэкапом.
-- Command palette (Ctrl+K), drag&drop в неделе, офлайн-режим телефонной страницы.
+- `student-name-normalization.md` — имя ученика резолвить через JOIN (переименование видно везде), без миграции данных.
+- `ux-features.md` — Ctrl+K палитра, dnd-полировка, офлайн телефонной страницы (каждая своим коммитом).
+- `specta-ipc-types.md` — генерация TS-типов из Rust-моделей (ts-rs), низший приоритет.
