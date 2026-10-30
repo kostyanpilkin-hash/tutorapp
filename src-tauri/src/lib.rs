@@ -41,6 +41,7 @@ pub fn run() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             get_lessons,
+            get_expanded_lessons,
             get_lesson,
             create_lesson,
             update_lesson,

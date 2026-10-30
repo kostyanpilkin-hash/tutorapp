@@ -28,7 +28,7 @@ import {
 import { StudentFormDialog } from "./StudentFormDialog";
 import { StudentAvatar } from "./StudentAvatar";
 import { formatMoney, numberLocaleFromLang, sortCurrencies } from "@/lib/money";
-import { expandLessons } from "@/lib/recurrence";
+import { loadExpandedLessons } from "@/lib/recurrence";
 import { cn } from "@/lib/utils";
 
 const locales = { ru, en: enUS, be: beLocale };
@@ -81,6 +81,7 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [expandedLessons, setExpandedLessons] = useState<Lesson[]>([]);
   const [finance, setFinance] = useState<StudentFinance | null>(null);
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -106,12 +107,15 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
   const loadDetail = useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const [ls, fin] = await Promise.all([
+      const now = new Date();
+      const [ls, fin, expanded] = await Promise.all([
         api.getStudentLessons(id),
         api.getStudentFinance(id),
+        loadExpandedLessons(startOfDay(subYears(now, 2)), endOfDay(addMonths(now, 2))),
       ]);
       setLessons(ls);
       setFinance(fin);
+      setExpandedLessons(expanded.filter((l) => l.students.some((s) => s.studentId === id)));
     } finally {
       setLoading(false);
     }
@@ -125,6 +129,7 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
     if (selectedId) void loadDetail(selectedId);
     else {
       setLessons([]);
+      setExpandedLessons([]);
       setFinance(null);
     }
   }, [selectedId, loadDetail, refreshKey]);
@@ -145,21 +150,27 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
 
   const upcomingLessons = useMemo(() => {
     const now = new Date();
-    const from = startOfDay(now);
-    const to = endOfDay(addMonths(now, 2));
-    return expandLessons(lessons, from, to)
-      .filter((l) => l.status === "scheduled")
+    const from = startOfDay(now).getTime();
+    const to = endOfDay(addMonths(now, 2)).getTime();
+    return expandedLessons
+      .filter((l) => {
+        const t = new Date(l.startAt).getTime();
+        return t >= from && t <= to && l.status === "scheduled";
+      })
       .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
-  }, [lessons]);
+  }, [expandedLessons]);
 
   const historyLessons = useMemo(() => {
     const now = new Date();
     let list: Lesson[];
     if (historyFilter === "past") {
-      const from = subYears(now, 2);
-      const to = endOfDay(now);
-      list = expandLessons(lessons, from, to)
-        .filter((l) => l.status === "completed" || l.status === "no_show" || l.status === "cancelled")
+      const to = endOfDay(now).getTime();
+      list = expandedLessons
+        .filter(
+          (l) =>
+            new Date(l.startAt).getTime() <= to &&
+            (l.status === "completed" || l.status === "no_show" || l.status === "cancelled"),
+        )
         .sort((a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime());
     } else {
       list = upcomingLessons;
@@ -171,7 +182,7 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
       list = list.filter((l) => (l.subject || "") === subjectFilter);
     }
     return list;
-  }, [lessons, historyFilter, upcomingLessons, paymentFilter, subjectFilter]);
+  }, [expandedLessons, historyFilter, upcomingLessons, paymentFilter, subjectFilter]);
 
   const subjectOptions = useMemo(() => {
     const set = new Set<string>();

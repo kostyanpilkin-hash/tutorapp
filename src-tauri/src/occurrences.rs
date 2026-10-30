@@ -2,7 +2,7 @@
 //! recurring parents and exception rows) into concrete dated occurrences.
 //! Used by the phone page and the Telegram bot.
 
-use chrono::{DateTime, Datelike, Duration, NaiveDate, TimeZone, Utc, Weekday};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, SecondsFormat, TimeZone, Utc, Weekday};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -30,6 +30,13 @@ pub struct Occ {
     pub currency: String,
     #[serde(skip)]
     pub start_utc: DateTime<Utc>,
+    /// Underlying `lessons.id` — the parent row for generated instances.
+    #[serde(skip)]
+    pub row_id: String,
+    /// `toISOString()`-style instant for generated series instances
+    /// (used to build frontend `parent::ISO` ids); `None` for real rows.
+    #[serde(skip)]
+    pub instance_iso: Option<String>,
 }
 
 struct Raw {
@@ -163,7 +170,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
                                 if let Ok(dt) = best.start.parse::<DateTime<Utc>>() {
                                     let bd = dt.with_timezone(&tz).date_naive();
                                     if bd >= from && bd <= to {
-                                        out.push(mk_occ(best, best.id.clone(), dt));
+                                        out.push(mk_occ(best, best.id.clone(), dt, None));
                                     }
                                 }
                             }
@@ -172,6 +179,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
                                 r,
                                 format!("{}@{}", r.id, d.format("%Y%m%d")),
                                 occ_utc,
+                                Some(occ_utc.to_rfc3339_opts(SecondsFormat::Millis, true)),
                             ));
                         }
                     }
@@ -181,7 +189,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
         } else if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
             let d = dt.with_timezone(&tz).date_naive();
             if d >= from && d <= to {
-                out.push(mk_occ(r, r.id.clone(), dt));
+                out.push(mk_occ(r, r.id.clone(), dt, None));
             }
         }
     }
@@ -197,7 +205,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
         if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
             let d = dt.with_timezone(&tz).date_naive();
             if d >= from && d <= to {
-                out.push(mk_occ(r, r.id.clone(), dt));
+                out.push(mk_occ(r, r.id.clone(), dt, None));
             }
         }
     }
@@ -225,7 +233,7 @@ fn pick_exception<'a>(matches: &[&'a Raw]) -> Option<&'a Raw> {
         .copied()
 }
 
-fn mk_occ(r: &Raw, id: String, utc: DateTime<Utc>) -> Occ {
+fn mk_occ(r: &Raw, id: String, utc: DateTime<Utc>, instance_iso: Option<String>) -> Occ {
     Occ {
         id,
         name: r.name.clone(),
@@ -240,6 +248,8 @@ fn mk_occ(r: &Raw, id: String, utc: DateTime<Utc>) -> Occ {
         cost: r.cost,
         currency: r.currency.clone(),
         start_utc: utc,
+        row_id: r.id.clone(),
+        instance_iso,
     }
 }
 

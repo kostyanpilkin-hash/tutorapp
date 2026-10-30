@@ -1,8 +1,7 @@
 import { create } from "zustand";
 import type { Lesson } from "@/types/lesson";
-import { api } from "@/lib/api";
 import { todayBoundsInTimezone } from "@/lib/contacts";
-import { expandLessons } from "@/lib/recurrence";
+import { loadExpandedLessons } from "@/lib/recurrence";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 
@@ -27,8 +26,7 @@ function sortTodayLessons(lessons: Lesson[]): Lesson[] {
 async function loadDayExpanded(baseDate: Date): Promise<Lesson[]> {
   const timezone = useSettingsStore.getState().timezone || "Europe/Moscow";
   const { from, to } = todayBoundsInTimezone(timezone, baseDate);
-  const lessons = await api.getLessons(from.toISOString(), to.toISOString());
-  return expandLessons(lessons, from, to);
+  return loadExpandedLessons(from, to);
 }
 
 export const useLessonStore = create<LessonState>((set) => ({
@@ -42,9 +40,8 @@ export const useLessonStore = create<LessonState>((set) => ({
   fetchRange: async (from, to) => {
     set({ loading: true, error: null });
     try {
-      const lessons = await api.getLessons(from.toISOString(), to.toISOString());
-      const expanded = expandLessons(lessons, from, to);
-      set({ lessons, expanded, loading: false });
+      const expanded = await loadExpandedLessons(from, to);
+      set({ lessons: expanded, expanded, loading: false });
     } catch (e) {
       set({ loading: false, error: String(e) });
     }
@@ -63,13 +60,12 @@ export const useLessonStore = create<LessonState>((set) => ({
   refresh: async (from, to) => {
     set({ loading: true, todayLoading: true });
     try {
-      const [lessons, todayExpanded] = await Promise.all([
-        api.getLessons(from.toISOString(), to.toISOString()),
+      const [expanded, todayExpanded] = await Promise.all([
+        loadExpandedLessons(from, to),
         loadDayExpanded(new Date()),
       ]);
-      const expanded = expandLessons(lessons, from, to);
       set({
-        lessons,
+        lessons: expanded,
         expanded,
         todayLessons: sortTodayLessons(todayExpanded),
         error: null,

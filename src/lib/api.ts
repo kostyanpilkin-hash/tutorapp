@@ -46,6 +46,9 @@ export const api = {
   getLessons: (from: string, to: string) =>
     call(() => invoke<Lesson[]>("get_lessons", { from, to })),
 
+  getExpandedLessons: (from: string, to: string) =>
+    call(() => invoke<Lesson[]>("get_expanded_lessons", { from, to })),
+
   getLesson: (id: string) => call(() => invoke<Lesson>("get_lesson", { id })),
 
   createLesson: (input: LessonInput) =>

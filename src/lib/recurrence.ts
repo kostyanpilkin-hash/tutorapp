@@ -1,5 +1,6 @@
 import { addDays, endOfDay, startOfDay, startOfWeek } from "date-fns";
 import type { Lesson } from "@/types/lesson";
+import { api } from "@/lib/api";
 
 export const WEEKLY_RULE = "FREQ=WEEKLY";
 
@@ -276,6 +277,33 @@ export function defaultRange(view: string, anchor: Date): { from: Date; to: Date
     default:
       return { from: startOfDay(anchor), to: endOfDay(addDays(anchor, 30)) };
   }
+}
+
+// localStorage flag `fe.expand=local` forces the legacy frontend expansion.
+const LOCAL_EXPAND_FLAG = "fe.expand";
+
+export function useLocalExpand(): boolean {
+  try {
+    return localStorage.getItem(LOCAL_EXPAND_FLAG) === "local";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Expanded occurrences for `[from, to]` — backend expansion by default
+ * (single source of truth with the bot/phone page), local `expandLessons`
+ * as a fallback via the flag or if the backend call fails.
+ */
+export async function loadExpandedLessons(from: Date, to: Date): Promise<Lesson[]> {
+  if (!useLocalExpand()) {
+    try {
+      return await api.getExpandedLessons(from.toISOString(), to.toISOString());
+    } catch (e) {
+      console.warn("Backend expansion failed, falling back to local", e);
+    }
+  }
+  return expandLessons(await api.getLessons(from.toISOString(), to.toISOString()), from, to);
 }
 
 export function realLessonId(id: string): string {

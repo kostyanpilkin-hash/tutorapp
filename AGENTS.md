@@ -17,6 +17,16 @@
 - База приложения: `%APPDATA%\TutorApp\tutor.db` (sqlite; читать можно через `node:sqlite` в Node 24+).
 - Жёстко не перечитывать одни и те же строки файлов в цикле — если знаешь якорь, правь; для дописки в конец *** — `cat >>`.
 
+## G1 — единый экспандер серий на бэкенде: ВЫПОЛНЕНО (ожидает ручной приёмки)
+
+Сделано: `get_expanded_lessons(from, to)` (команда + `expanded_lessons_in_range` в `commands/lessons.rs`) отдаёт `Vec<Lesson>`; сгенерированные экземпляры — id `parent::ISO` (toISOString-формат, поля `Occ.row_id`/`instance_iso` в `occurrences.rs`). Фронт: `loadExpandedLessons()` в `src/lib/recurrence.ts` — бэкенд по умолчанию, `expandLessons` как fallback (localStorage `fe.expand=local` или при ошибке). Потребители: `lessonStore`, `RemindersPanel`, `StudentsPanel`.
+
+Паритет: `scripts/parity-prepare.mjs` (копия БД + диапазоны) → `cargo test -- --ignored expanded_dump` → `src/lib/parity.test.ts` сравнивает `[id,startAt]` с `expandLessons`. На реальной БД — идентично.
+
+Побочный фикс: `snooze_reminder` нормализует ключи (`parent::ISO` → parent id, время → rfc3339) — иначе снуз повторяющихся не совпадал с ключами планировщика.
+
+Осталось после приёмки: выпилить `expandLessons` и `fe.expand` fallback, перевести `scheduler/expand_weekly_starts` на `occurrences::collect`.
+
 ## Особенности
 
 - Темы: `html.theme-*` классы в `src/index.css`, метаданные `src/lib/themes.ts`, переводы `src/i18n/locales/{ru,en,be}.ts`.

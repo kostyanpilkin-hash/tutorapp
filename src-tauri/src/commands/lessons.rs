@@ -331,15 +331,66 @@ pub fn get_lessons_for_student(
         }
     })
 }
+fn load_lesson_by_id(conn: &Connection, id: &str) -> Result<Lesson, String> {
+    let mut stmt = conn
+        .prepare(&format!("{LESSON_SELECT} FROM lessons WHERE id = ?1"))
+        .map_err(|e| e.to_string())?;
+    stmt.query_row(params![id], |row| row_to_lesson(conn, row))
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_lesson(state: tauri::State<AppState>, id: String) -> Result<Lesson, String> {
-    state.pool.with_conn(|conn| {
-        let mut stmt = conn
-            .prepare(&format!("{LESSON_SELECT} FROM lessons WHERE id = ?1"))
-            .map_err(|e| e.to_string())?;
-        stmt.query_row(params![id], |row| row_to_lesson(conn, row))
-            .map_err(|e| e.to_string())
-    })
+    state.pool.with_conn(|conn| load_lesson_by_id(conn, &id))
+}
+
+/// Expands recurring series into concrete instances over `[from_dt, to_dt]`
+/// (instants). Generated instances get frontend-compatible `parent::ISO`
+/// ids (`toISOString` format) and inherit every field from the parent row,
+/// including students and reminders. Exceptions/singles keep their real ids.
+pub(crate) fn expanded_lessons_in_range(
+    conn: &Connection,
+    from_dt: DateTime<Utc>,
+    to_dt: DateTime<Utc>,
+) -> Result<Vec<Lesson>, String> {
+    let _ = dedupe_all_exception_slots(conn);
+    let tz = crate::occurrences::timezone(conn);
+    let occs = crate::occurrences::collect(
+        conn,
+        tz,
+        from_dt.with_timezone(&tz).date_naive(),
+        to_dt.with_timezone(&tz).date_naive(),
+    )?;
+    let mut out = Vec::with_capacity(occs.len());
+    for occ in occs {
+        // `collect` filters by local date; keep exact instant bounds like the frontend.
+        if occ.start_utc < from_dt || occ.start_utc > to_dt {
+            continue;
+        }
+        let mut lesson = load_lesson_by_id(conn, &occ.row_id)?;
+        if let Some(iso) = &occ.instance_iso {
+            lesson.id = format!("{}::{}", occ.row_id, iso);
+            lesson.start_at = iso.clone();
+            lesson.recurrence_instance_date = Some(iso.clone());
+        }
+        out.push(lesson);
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub fn get_expanded_lessons(
+    state: tauri::State<AppState>,
+    from: String,
+    to: String,
+) -> Result<Vec<Lesson>, String> {
+    let from_dt = from
+        .parse::<DateTime<Utc>>()
+        .map_err(|e: chrono::ParseError| e.to_string())?;
+    let to_dt = to
+        .parse::<DateTime<Utc>>()
+        .map_err(|e: chrono::ParseError| e.to_string())?;
+    state.pool.with_conn(|conn| expanded_lessons_in_range(conn, from_dt, to_dt))
 }
 #[tauri::command]
 pub fn create_lesson(
@@ -1320,6 +1371,313 @@ mod tests {
         .unwrap();
     }
 
+    fn insert_lesson_ex(
+        conn: &Connection,
+        id: &str,
+        student_name: &str,
+        start_at: &str,
+        status: &str,
+        rule: Option<&str>,
+        parent: Option<&str>,
+        instance_date: Option<&str>,
+    ) {
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO lessons (id, student_name, subject, start_at, duration_minutes, status, payment_status,
+                                  recurrence_rule, recurrence_parent_id, recurrence_instance_date, created_at, updated_at)
+             VALUES (?1, ?2, 'Math', ?3, 60, ?4, 'unpaid', ?5, ?6, ?7, ?8, ?8)",
+            params![id, student_name, start_at, status, rule, parent, instance_date, now],
+        )
+        .unwrap();
+    }
+
+    fn insert_student(conn: &Connection, id: &str, name: &str) {
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO students (id, name, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
+            params![id, name, now],
+        )
+        .unwrap();
+    }
+
+    fn expanded_ids(conn: &Connection, from: &str, to: &str) -> Vec<String> {
+        expanded_lessons_in_range(
+            conn,
+            from.parse().unwrap(),
+            to.parse().unwrap(),
+        )
+        .unwrap()
+        .into_iter()
+        .map(|l| l.id)
+        .collect()
+    }
+
+    #[test]
+    fn expanded_weekly_generates_frontend_ids() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        conn.execute(
+            "INSERT INTO lesson_students (lesson_id, student_id, cost, currency, payment_status)
+             VALUES ('p1', 's1', 100.0, 'USD', 'unpaid')",
+            [],
+        )
+        .unwrap();
+
+        let out = expanded_lessons_in_range(
+            &conn,
+            "2026-03-09T00:00:00Z".parse().unwrap(),
+            "2026-03-22T23:59:59Z".parse().unwrap(),
+        )
+        .unwrap();
+        let ids: Vec<&str> = out.iter().map(|l| l.id.as_str()).collect();
+        // The Mar 23 slot falls outside the instant range (local date boundary).
+        assert_eq!(
+            ids,
+            ["p1::2026-03-09T10:00:00.000Z", "p1::2026-03-16T10:00:00.000Z"]
+        );
+        let inst = &out[0];
+        assert_eq!(inst.start_at, "2026-03-09T10:00:00.000Z");
+        assert_eq!(
+            inst.recurrence_instance_date.as_deref(),
+            Some("2026-03-09T10:00:00.000Z")
+        );
+        // Generated instances keep the parent's rule and null parent — like `{...parent}`.
+        assert_eq!(inst.recurrence_rule.as_deref(), Some("FREQ=WEEKLY"));
+        assert_eq!(inst.recurrence_parent_id, None);
+        assert_eq!(inst.students.len(), 1);
+        assert_eq!(inst.students[0].student_id, "s1");
+    }
+
+    #[test]
+    fn expanded_respects_count_and_exclusive_until() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "pc",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY;COUNT=2"),
+            None,
+            None,
+        );
+        insert_lesson_ex(
+            &conn,
+            "pu",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY;UNTIL=2026-03-16T10:00:00.000Z"),
+            None,
+            None,
+        );
+        let ids = expanded_ids(&conn, "2026-03-01T00:00:00Z", "2026-04-30T23:59:59Z");
+        assert_eq!(
+            ids,
+            [
+                "pc::2026-03-09T10:00:00.000Z",
+                "pu::2026-03-09T10:00:00.000Z",
+                "pc::2026-03-16T10:00:00.000Z",
+            ]
+        );
+    }
+
+    #[test]
+    fn expanded_byday_emits_each_weekday() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "pb",
+            "Ivan",
+            "2026-03-09T10:00:00Z", // Monday
+            "scheduled",
+            Some("FREQ=WEEKLY;BYDAY=MO,WE"),
+            None,
+            None,
+        );
+        let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-15T23:59:59Z");
+        assert_eq!(
+            ids,
+            ["pb::2026-03-09T10:00:00.000Z", "pb::2026-03-11T10:00:00.000Z"]
+        );
+    }
+
+    #[test]
+    fn expanded_applies_moved_exception_and_suppresses_slot() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        // Slot Mar 16 moved to Mar 17.
+        insert_lesson_ex(
+            &conn,
+            "e1",
+            "Ivan",
+            "2026-03-17T10:00:00Z",
+            "scheduled",
+            None,
+            Some("p1"),
+            Some("2026-03-16T10:00:00.000Z"),
+        );
+        let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-22T23:59:59Z");
+        assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z", "e1"]);
+    }
+
+    #[test]
+    fn expanded_skips_cancelled_exception_slot() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        insert_lesson_ex(
+            &conn,
+            "e1",
+            "Ivan",
+            "2026-03-16T10:00:00Z",
+            "cancelled",
+            None,
+            Some("p1"),
+            Some("2026-03-16T10:00:00.000Z"),
+        );
+        let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-22T23:59:59Z");
+        assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z"]);
+    }
+
+    #[test]
+    fn expanded_picks_best_exception_for_slot() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        // Two rows claim the Mar 16 slot; completed outranks cancelled.
+        insert_lesson_ex(
+            &conn,
+            "e_cancel",
+            "Ivan",
+            "2026-03-16T10:00:00Z",
+            "cancelled",
+            None,
+            Some("p1"),
+            Some("2026-03-16T10:00:00.000Z"),
+        );
+        insert_lesson_ex(
+            &conn,
+            "e_done",
+            "Ivan",
+            "2026-03-16T10:00:00Z",
+            "completed",
+            None,
+            Some("p1"),
+            Some("2026-03-16T10:00:00.000Z"),
+        );
+        let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-22T23:59:59Z");
+        // dedupe_all_exception_slots keeps the best row only.
+        assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z", "e_done"]);
+    }
+
+    #[test]
+    fn expanded_emits_leftover_exception_inside_range() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        // Exception anchored to a slot beyond the window but moved inside it.
+        insert_lesson_ex(
+            &conn,
+            "e1",
+            "Ivan",
+            "2026-03-20T10:00:00Z",
+            "scheduled",
+            None,
+            Some("p1"),
+            Some("2026-04-06T10:00:00.000Z"),
+        );
+        let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-22T23:59:59Z");
+        assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z", "p1::2026-03-16T10:00:00.000Z", "e1"]);
+    }
+
+    #[test]
+    fn expanded_keeps_singles_and_excludes_parents() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "single",
+            "Maria",
+            "2026-03-10T09:00:00Z",
+            "scheduled",
+            None,
+            None,
+            None,
+        );
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        let out = expanded_lessons_in_range(
+            &conn,
+            "2026-03-09T00:00:00Z".parse().unwrap(),
+            "2026-03-16T23:59:59Z".parse().unwrap(),
+        )
+        .unwrap();
+        let ids: Vec<&str> = out.iter().map(|l| l.id.as_str()).collect();
+        // The recurring parent row itself must never appear.
+        assert!(!ids.contains(&"p1"));
+        assert_eq!(
+            ids,
+            [
+                "p1::2026-03-09T10:00:00.000Z",
+                "single",
+                "p1::2026-03-16T10:00:00.000Z"
+            ]
+        );
+        // Sorted by start instant: Mar 9 10:00 < Mar 10 09:00 < Mar 16 10:00.
+        assert_eq!(out[1].start_at, "2026-03-10T09:00:00Z");
+    }
+
     #[test]
     fn find_overlaps_detects_regular_conflict() {
         let conn = test_conn();
@@ -1349,5 +1707,39 @@ mod tests {
         )
         .unwrap();
         assert!(overlaps.is_empty());
+    }
+
+    /// Parity dump for `src/lib/parity.test.ts`: expands a real DB copy for the
+    /// ranges in PARITY_IN and writes `{name, lessons:[{id,start}]}` to PARITY_OUT.
+    /// `PARITY_DB=<copy> PARITY_IN=<json> PARITY_OUT=<json> cargo test -- --ignored`
+    #[test]
+    #[ignore]
+    fn expanded_dump_real_db() {
+        let db = std::env::var("PARITY_DB").expect("PARITY_DB");
+        let input_path = std::env::var("PARITY_IN").expect("PARITY_IN");
+        let out_path = std::env::var("PARITY_OUT").expect("PARITY_OUT");
+        let conn = Connection::open(&db).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+
+        let input: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&input_path).unwrap()).unwrap();
+        let mut dump = Vec::new();
+        for range in input["ranges"].as_array().unwrap() {
+            let from: DateTime<Utc> = range["from"].as_str().unwrap().parse().unwrap();
+            let to: DateTime<Utc> = range["to"].as_str().unwrap().parse().unwrap();
+            let lessons = expanded_lessons_in_range(&conn, from, to).unwrap();
+            let items: Vec<serde_json::Value> = lessons
+                .iter()
+                .map(|l| serde_json::json!({"id": l.id, "start": l.start_at}))
+                .collect();
+            dump.push(serde_json::json!({
+                "name": range["name"],
+                "from": range["from"],
+                "to": range["to"],
+                "lessons": items,
+            }));
+        }
+        std::fs::write(&out_path, serde_json::to_string_pretty(&dump).unwrap()).unwrap();
     }
 }

@@ -93,6 +93,17 @@ pub fn snooze_reminder(
         return Err("snooze_minutes must be positive".to_string());
     }
 
+    // UI sends recurring instances as `parent::ISO` with `toISOString()` keys;
+    // the scheduler keys snoozes by (parent id, rfc3339). Normalize to match.
+    let instance_start = instance_start
+        .parse::<DateTime<Utc>>()
+        .map(|d| d.to_rfc3339())
+        .unwrap_or(instance_start);
+    let lesson_id = match lesson_id.split_once("::") {
+        Some((parent, _)) => parent.to_string(),
+        None => lesson_id,
+    };
+
     state.pool.with_conn(|conn| {
         let snooze_until = (Utc::now() + Duration::minutes(snooze_minutes)).to_rfc3339();
         conn.execute(

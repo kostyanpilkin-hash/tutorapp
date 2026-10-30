@@ -5,7 +5,7 @@ import { enUS, ru, be as beLocale } from "date-fns/locale";
 import type { Lesson } from "@/types/lesson";
 import type { FiredReminderEntry } from "@/lib/api";
 import { api } from "@/lib/api";
-import { expandLessons } from "@/lib/recurrence";
+import { loadExpandedLessons } from "@/lib/recurrence";
 import { useToastStore } from "@/stores/toastStore";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -82,13 +82,13 @@ export function RemindersPanel() {
       const now = new Date();
       const from = now;
       const to = addDays(now, 7);
-      const [lessonRows, firedRows, settings] = await Promise.all([
-        api.getLessons(from.toISOString(), to.toISOString()),
+      const [expandedRows, firedRows, settings] = await Promise.all([
+        loadExpandedLessons(from, to),
         api.getFiredReminders(100),
         api.getSettings(),
       ]);
       const snoozeMap = parseSnoozeMap(settings.reminder_snooze);
-      const expanded = expandLessons(lessonRows, from, to).filter((lesson) => lesson.status === "scheduled");
+      const expanded = expandedRows.filter((lesson) => lesson.status === "scheduled");
       setUpcoming(buildUpcomingReminders(expanded, snoozeMap, now));
       setJournal(firedRows);
     } finally {
