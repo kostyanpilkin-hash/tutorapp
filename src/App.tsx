@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -49,6 +49,7 @@ export default function App() {
     onboardingDone,
     setOnboardingDone,
     setTheme,
+    defaultPage,
   } = useSettingsStore(
     useShallow((s) => ({
       view: s.view,
@@ -62,6 +63,7 @@ export default function App() {
       onboardingDone: s.onboardingDone,
       setOnboardingDone: s.setOnboardingDone,
       setTheme: s.setTheme,
+      defaultPage: s.defaultPage,
     })),
   );
   const queryClient = useQueryClient();
@@ -112,6 +114,16 @@ export default function App() {
   useEffect(() => {
     void load().then(() => i18n.changeLanguage(language));
   }, [load, language]);
+
+  // Apply the configured start page once, after settings load — later
+  // changes to defaultPage must not yank the user off the settings screen.
+  const pageInitRef = useRef(false);
+  useEffect(() => {
+    if (loaded && !pageInitRef.current) {
+      pageInitRef.current = true;
+      if (defaultPage === "calendar") setPage("calendar");
+    }
+  }, [loaded, defaultPage]);
 
   useEffect(() => {
     const unlisten = listen<{ link?: string; title?: string; body?: string }>("lesson-reminder", (event) => {

@@ -198,6 +198,8 @@ const en = {
     timezone: "Timezone",
     defaultDuration: "Default duration",
     defaultCalendarView: "Default calendar view",
+    defaultPage: "Start page",
+    defaultCurrency: "Currency for new students",
     defaultReminders: "Default reminders",
     noSecondReminder: "No second reminder",
     noThirdReminder: "No third reminder",

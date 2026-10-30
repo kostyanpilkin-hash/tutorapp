@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAppData } from "@/lib/queryKeys";
+import { useSettingsStore } from "@/stores/settingsStore";
 import type { Student, StudentInput } from "@/types/student";
 import { studentToInput } from "@/types/student";
 import { api } from "@/lib/api";
@@ -69,7 +70,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     defaultLink: null,
     color: null,
     defaultDuration: 60,
-    defaultCurrency: "USD",
+    defaultCurrency: useSettingsStore.getState().defaultCurrency,
     paidLessons: 0,
   });
   const [photoPath, setPhotoPath] = useState<string | null>(null);
@@ -105,10 +106,11 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
       setPreviousCurrency(student.defaultCurrency || "USD");
       setPreviousLink(student.defaultLink ?? null);
     } else {
-      setForm({ name: "", notes: "", lessonNote: "", email: null, phone: null, messenger: null, parents: null, parentName: null, parentPhone: null, parentMessenger: null, birthDate: null, timezone: null, defaultCost: null, defaultLink: null, color: null, defaultDuration: 60, defaultCurrency: "USD", paidLessons: 0 });
+      const defaultCurrency = useSettingsStore.getState().defaultCurrency;
+      setForm({ name: "", notes: "", lessonNote: "", email: null, phone: null, messenger: null, parents: null, parentName: null, parentPhone: null, parentMessenger: null, birthDate: null, timezone: null, defaultCost: null, defaultLink: null, color: null, defaultDuration: 60, defaultCurrency, paidLessons: 0 });
       setPhotoPath(null);
       setCreatedId(null);
-      setPreviousCurrency("USD");
+      setPreviousCurrency(defaultCurrency);
       setPreviousLink(null);
     }
   }, [open, student]);

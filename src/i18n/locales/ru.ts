@@ -198,6 +198,8 @@ const ru = {
     timezone: "Часовой пояс",
     defaultDuration: "Длительность по умолчанию",
     defaultCalendarView: "Вид календаря по умолчанию",
+    defaultPage: "Стартовая страница",
+    defaultCurrency: "Валюта для новых учеников",
     defaultReminders: "Напоминания по умолчанию",
     noSecondReminder: "Без второго",
     noThirdReminder: "Без третьего",

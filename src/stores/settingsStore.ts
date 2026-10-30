@@ -25,6 +25,8 @@ interface SettingsState {
   defaultDuration: number;
   defaultReminders: number[];
   defaultCalendarView: CalendarView;
+  defaultPage: "home" | "calendar";
+  defaultCurrency: string;
   view: CalendarView;
   anchorDate: Date;
   loaded: boolean;
@@ -35,6 +37,8 @@ interface SettingsState {
   previewTheme: (theme: Theme) => void;
   setTimezone: (tz: string) => Promise<void>;
   setDefaultCalendarView: (view: CalendarView) => Promise<void>;
+  setDefaultPage: (page: "home" | "calendar") => Promise<void>;
+  setDefaultCurrency: (currency: string) => Promise<void>;
   setDefaultDuration: (minutes: number) => Promise<void>;
   setDefaultReminders: (minutes: number[]) => Promise<void>;
   setOnboardingDone: () => Promise<void>;
@@ -73,6 +77,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   defaultDuration: 60,
   defaultReminders: [1440, 15, 0],
   defaultCalendarView: "week",
+  defaultPage: "home",
+  defaultCurrency: "USD",
   view: "week",
   anchorDate: new Date(),
   loaded: false,
@@ -90,6 +96,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       defaultDuration: Number(s.default_duration || 60),
       defaultReminders: parseReminders(s.default_reminders),
       defaultCalendarView,
+      defaultPage: s.default_page === "calendar" ? "calendar" : "home",
+      defaultCurrency: s.default_currency || "USD",
       view: defaultCalendarView,
       onboardingDone: s.onboarding_done === "1",
       loaded: true,
@@ -120,6 +128,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setDefaultCalendarView: async (defaultCalendarView) => {
     await api.setSetting("default_calendar_view", defaultCalendarView);
     set({ defaultCalendarView, view: defaultCalendarView });
+  },
+
+  setDefaultPage: async (defaultPage) => {
+    await api.setSetting("default_page", defaultPage);
+    set({ defaultPage });
+  },
+
+  setDefaultCurrency: async (defaultCurrency) => {
+    await api.setSetting("default_currency", defaultCurrency);
+    set({ defaultCurrency });
   },
 
   setDefaultDuration: async (minutes) => {

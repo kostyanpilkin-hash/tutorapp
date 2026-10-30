@@ -7,9 +7,11 @@ import {
   BookOpen,
   CalendarDays,
   Clock,
+  Coins,
   Database,
   Globe,
   GraduationCap,
+  Home,
   Languages,
   MessageSquare,
   Palette,
@@ -46,6 +48,7 @@ import {
 } from "@/components/ui/dialog";
 import type { CalendarView } from "@/types/lesson";
 import { COMMON_TIMEZONES, getTimezoneOffset } from "@/lib/contacts";
+import { CURRENCIES } from "@/lib/money";
 import { ThemePreview } from "@/components/settings/ThemePreview";
 import { ThemePickerDialog } from "@/components/settings/ThemePickerDialog";
 import i18n from "@/i18n";
@@ -116,9 +119,13 @@ export function SettingsPanel() {
     defaultDuration,
     defaultReminders,
     defaultCalendarView,
+    defaultPage,
+    defaultCurrency,
     setLanguage,
     setTimezone,
     setDefaultCalendarView,
+    setDefaultPage,
+    setDefaultCurrency,
     setDefaultDuration,
     setDefaultReminders,
   } = useSettingsStore(
@@ -129,9 +136,13 @@ export function SettingsPanel() {
       defaultDuration: s.defaultDuration,
       defaultReminders: s.defaultReminders,
       defaultCalendarView: s.defaultCalendarView,
+      defaultPage: s.defaultPage,
+      defaultCurrency: s.defaultCurrency,
       setLanguage: s.setLanguage,
       setTimezone: s.setTimezone,
       setDefaultCalendarView: s.setDefaultCalendarView,
+      setDefaultPage: s.setDefaultPage,
+      setDefaultCurrency: s.setDefaultCurrency,
       setDefaultDuration: s.setDefaultDuration,
       setDefaultReminders: s.setDefaultReminders,
     })),
@@ -402,6 +413,15 @@ export function SettingsPanel() {
           </SelectContent>
         </Select>
       </SettingRow>
+      <SettingRow icon={Home} label={t("settings.defaultPage")}>
+        <Select value={defaultPage} onValueChange={(v) => void setDefaultPage(v as "home" | "calendar")}>
+          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="home">{t("app.today")}</SelectItem>
+            <SelectItem value="calendar">{t("app.calendar")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
       <SettingRow icon={Power} label={t("settings.autostart")}>
         <Switch checked={autostart} onCheckedChange={(v) => void toggleAutostart(v)} />
       </SettingRow>
@@ -427,19 +447,31 @@ export function SettingsPanel() {
   );
 
   const lessonsSection = (
-    <SettingRow icon={Clock} label={t("settings.defaultDuration")} hint={t("settings.durationHint")}>
-      <div className="flex gap-2">
-        <Input
-          type="number"
-          min={15}
-          max={240}
-          className="w-24"
-          value={durationDraft}
-          onChange={(e) => setDurationDraft(e.target.value)}
-        />
-        <Button variant="outline" onClick={() => void saveDuration()}>{t("settings.save")}</Button>
-      </div>
-    </SettingRow>
+    <>
+      <SettingRow icon={Clock} label={t("settings.defaultDuration")} hint={t("settings.durationHint")}>
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            min={15}
+            max={240}
+            className="w-24"
+            value={durationDraft}
+            onChange={(e) => setDurationDraft(e.target.value)}
+          />
+          <Button variant="outline" onClick={() => void saveDuration()}>{t("settings.save")}</Button>
+        </div>
+      </SettingRow>
+      <SettingRow icon={Coins} label={t("settings.defaultCurrency")}>
+        <Select value={defaultCurrency} onValueChange={(v) => void setDefaultCurrency(v)}>
+          <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {CURRENCIES.map((c) => (
+              <SelectItem key={c} value={c}>{c}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+    </>
   );
 
   const remindersSection = (

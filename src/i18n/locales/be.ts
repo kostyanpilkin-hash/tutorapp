@@ -198,6 +198,8 @@ const be = {
     timezone: "Часавы пояс",
     defaultDuration: "Працягласць па змаўчанні",
     defaultCalendarView: "Выгляд календара па змаўчанні",
+    defaultPage: "Стартавая старонка",
+    defaultCurrency: "Валюта для новых вучняў",
     defaultReminders: "Напамінанні па змаўчанні",
     noSecondReminder: "Без другога",
     noThirdReminder: "Без трэцяга",
