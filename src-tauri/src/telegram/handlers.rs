@@ -1,7 +1,7 @@
 //! Update handling: reply keyboard, commands, settings toggles, action callbacks.
 
 use super::api::{Bot, CallbackQuery, Message, Update, esc};
-use super::texts::T;
+use super::texts::{L, T};
 use super::{
     day_occurrences, is_running, lang, open_db, owner_chat, parse_callback,
     set_setting, setting,
@@ -213,18 +213,32 @@ fn day_stats(t: &T, occs: &[Occ]) -> String {
     if left > 0 { parts.push(t.stats_left(left)); }
     if noshow > 0 { parts.push(format!("{} ❌", noshow)); }
     if cancelled > 0 { parts.push(format!("{} 🚫", cancelled)); }
+    // Expected revenue for the day, one sum per currency.
+    let mut sums: Vec<(String, f64)> = Vec::new();
+    for o in occs.iter().filter(|o| o.status != "cancelled" && o.cost > 0.0) {
+        match sums.iter_mut().find(|(c, _)| *c == o.currency) {
+            Some((_, v)) => *v += o.cost,
+            None => sums.push((o.currency.clone(), o.cost)),
+        }
+    }
+    for (cur, sum) in sums {
+        parts.push(format!("≈ {} {}", sum, esc(&cur)));
+    }
     parts.join(" · ")
 }
 
 pub fn day_message(t: &T, date: NaiveDate, occs: &[Occ], tz: chrono_tz::Tz, fields: &[String], title: &str) -> String {
+    // Titles with their own emoji ("🌅 …") keep it; plain ones get 📅.
+    let head = match title.chars().next() {
+        None => format!("📅 {}", full_date(t, date)),
+        Some(c) if c.is_alphanumeric() => format!("📅 {title} · {}", full_date(t, date)),
+        _ => format!("{title} · {}", full_date(t, date)),
+    };
     if occs.is_empty() {
-        return format!("<b>{} · {} {}</b>\n{}", title, weekday_name(t, date), date.format("%d.%m"), t.no_lessons());
+        return format!("<b>{head}</b>\n{}", t.no_lessons());
     }
     let mut s = format!(
-        "<b>{} · {} {}</b>\n<blockquote>{}</blockquote>\n",
-        title,
-        weekday_name(t, date),
-        date.format("%d.%m"),
+        "<b>{head}</b>\n<blockquote>{}</blockquote>\n",
         day_stats(t, occs),
     );
     for o in occs {
@@ -232,6 +246,10 @@ pub fn day_message(t: &T, date: NaiveDate, occs: &[Occ], tz: chrono_tz::Tz, fiel
         s.push_str("\n\n");
     }
     s.trim_end().to_string()
+}
+
+fn pick3(t: &T, ru: &'static str, en: &'static str, be: &'static str) -> &'static str {
+    match t.0 { L::Ru => ru, L::En => en, L::Be => be }
 }
 
 fn weekday_name(t: &T, d: NaiveDate) -> &'static str {
@@ -244,10 +262,52 @@ fn weekday_name(t: &T, d: NaiveDate) -> &'static str {
         chrono::Weekday::Sat => ("Сб", "Sat", "Сб"),
         chrono::Weekday::Sun => ("Вс", "Sun", "Нд"),
     };
-    match t { T(super::texts::L::Ru) => ru, T(super::texts::L::En) => en, T(super::texts::L::Be) => be }
+    pick3(t, ru, en, be)
+}
+
+fn weekday_full(t: &T, d: NaiveDate) -> &'static str {
+    let (ru, en, be) = match d.weekday() {
+        chrono::Weekday::Mon => ("Понедельник", "Monday", "Панядзелак"),
+        chrono::Weekday::Tue => ("Вторник", "Tuesday", "Аўторак"),
+        chrono::Weekday::Wed => ("Среда", "Wednesday", "Серада"),
+        chrono::Weekday::Thu => ("Четверг", "Thursday", "Чацвер"),
+        chrono::Weekday::Fri => ("Пятница", "Friday", "Пятніца"),
+        chrono::Weekday::Sat => ("Суббота", "Saturday", "Субота"),
+        chrono::Weekday::Sun => ("Воскресенье", "Sunday", "Нядзеля"),
+    };
+    pick3(t, ru, en, be)
+}
+
+/// Month name in genitive for ru/be ("30 октября"), nominative for en.
+fn month_name(t: &T, m: u32) -> &'static str {
+    let (ru, en, be) = match m {
+        1 => ("января", "January", "студзеня"),
+        2 => ("февраля", "February", "лютага"),
+        3 => ("марта", "March", "сакавіка"),
+        4 => ("апреля", "April", "красавіка"),
+        5 => ("мая", "May", "мая"),
+        6 => ("июня", "June", "чэрвеня"),
+        7 => ("июля", "July", "ліпеня"),
+        8 => ("августа", "August", "жніўня"),
+        9 => ("сентября", "September", "верасня"),
+        10 => ("октября", "October", "кастрычніка"),
+        11 => ("ноября", "November", "лістапада"),
+        _ => ("декабря", "December", "снежня"),
+    };
+    pick3(t, ru, en, be)
+}
+
+/// "Четверг, 30 октября" / "Thursday, October 30".
+fn full_date(t: &T, d: NaiveDate) -> String {
+    let (wd, mname, day) = (weekday_full(t, d), month_name(t, d.month()), d.day());
+    match t.0 {
+        L::En => format!("{wd}, {mname} {day}"),
+        _ => format!("{wd}, {day} {mname}"),
+    }
 }
 
 pub fn week_message(t: &T, start: NaiveDate, occs: &[Occ], tz: chrono_tz::Tz, fields: &[String]) -> String {
+    let today = Utc::now().with_timezone(&tz).date_naive();
     let mut s = String::from("<b>🗓 ");
     s.push_str(t.week());
     s.push_str("</b>\n<blockquote>");
@@ -256,8 +316,15 @@ pub fn week_message(t: &T, start: NaiveDate, occs: &[Occ], tz: chrono_tz::Tz, fi
     for i in 0..7 {
         let d = start + Duration::days(i);
         let day: Vec<&Occ> = occs.iter().filter(|o| o.start_utc.with_timezone(&tz).date_naive() == d).collect();
-        if day.is_empty() { continue; }
-        s.push_str(&format!("\n<b>▸ {} {}</b>\n\n", weekday_name(t, d), d.format("%d.%m")));
+        let mark = if d == today { "📍 " } else { "" };
+        if day.is_empty() {
+            s.push_str(&format!(
+                "\n<b>{mark}▸ {} · {} {}</b> — {}\n",
+                weekday_name(t, d), d.day(), month_name(t, d.month()), t.day_free(),
+            ));
+            continue;
+        }
+        s.push_str(&format!("\n<b>{mark}▸ {} · {} {}</b>\n\n", weekday_name(t, d), d.day(), month_name(t, d.month())));
         for o in day {
             s.push_str(&lesson_card(t, o, tz, fields));
             s.push_str("\n\n");

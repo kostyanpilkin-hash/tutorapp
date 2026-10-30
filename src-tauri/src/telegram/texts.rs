@@ -67,6 +67,7 @@ impl T {
     pub fn not_linked(&self) -> &'static str { self.s("Неверная команда. Используйте кнопки ниже.", "Unknown command. Use the buttons below.", "Невядомая каманда. Выкарыстоўвайце кнопкі ніжэй.") }
     pub fn paid_label(&self) -> &'static str { self.s("оплачено", "paid", "аплачана") }
     pub fn unpaid_word(&self) -> &'static str { self.s("не оплачено", "unpaid", "не аплачана") }
+    pub fn day_free(&self) -> &'static str { self.s("свободно", "free", "вольна") }
     pub fn minutes(&self, n: i64) -> String {
         match self.0 {
             L::Ru => format!("{n} мин"),
