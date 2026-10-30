@@ -172,6 +172,19 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [openCreate, goToToday]);
 
+  // Refresh data when the app regains focus (e.g. after bot actions).
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") void reload();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+    };
+  }, [reload]);
+
   const views: { id: CalendarView; label: string }[] = [
     { id: "week", label: t("views.week") },
     { id: "month", label: t("views.month") },

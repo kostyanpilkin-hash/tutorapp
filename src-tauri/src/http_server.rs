@@ -24,7 +24,10 @@ struct SrvState {
 }
 
 fn open_db() -> Result<Connection, String> {
-    Connection::open(db::db_path()).map_err(|e| e.to_string())
+    let conn = Connection::open(db::db_path()).map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;")
+        .map_err(|e| e.to_string())?;
+    Ok(conn)
 }
 
 fn setting(conn: &Connection, key: &str) -> Option<String> {
@@ -63,6 +66,11 @@ fn default_route_ip() -> Option<std::net::Ipv4Addr> {
 /// adapters; prefers the interface that carries the default route, then
 /// 192.168.x.x, 172.16-31.x.x, 10.x.x.x.
 fn local_ips() -> Vec<String> {
+    static CACHE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(local_ips_uncached).clone()
+}
+
+fn local_ips_uncached() -> Vec<String> {
     const TUNNEL_HINTS: &[&str] = &[
         "vpn", "tun", "tap", "xray", "wireguard", "wg", "openvpn", "tailscale",
         "wsl", "hyper-v", "virtualbox", "vmware", "loopback", "bluetooth",

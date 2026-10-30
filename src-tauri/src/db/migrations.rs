@@ -233,6 +233,19 @@ pub fn run(conn: &Connection) -> Result<(), String> {
         "DELETE FROM telegram_sent WHERE sent_at < datetime('now', '-14 days')",
         [],
     );
+    let _ = conn.execute(
+        "DELETE FROM telegram_refs WHERE created_at < datetime('now', '-30 days')",
+        [],
+    );
+
+    // Indexes for common lookups.
+    let _ = conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_lessons_start ON lessons(start_at);
+         CREATE INDEX IF NOT EXISTS idx_lessons_parent ON lessons(recurrence_parent_id);
+         CREATE INDEX IF NOT EXISTS idx_lesson_students_lesson ON lesson_students(lesson_id);
+         CREATE INDEX IF NOT EXISTS idx_lesson_students_student ON lesson_students(student_id);
+         CREATE INDEX IF NOT EXISTS idx_reminders_lesson ON reminders(lesson_id);",
+    );
 
     // Retention: keep the newest 5000 journal entries.
     let _ = conn.execute(

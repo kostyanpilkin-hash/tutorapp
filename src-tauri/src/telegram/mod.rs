@@ -15,7 +15,10 @@ use chrono::Timelike;
 static RUN: AtomicU64 = AtomicU64::new(0);
 
 pub fn open_db() -> Result<Connection, String> {
-    Connection::open(db::db_path()).map_err(|e| e.to_string())
+    let conn = Connection::open(db::db_path()).map_err(|e| e.to_string())?;
+    conn.execute_batch("PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;")
+        .map_err(|e| e.to_string())?;
+    Ok(conn)
 }
 
 pub fn setting(conn: &Connection, key: &str) -> Option<String> {
@@ -54,6 +57,7 @@ pub struct TgStatus {
     linked: bool,
     chat_id: Option<i64>,
     pairing_code: Option<String>,
+    last_error: Option<String>,
 }
 
 #[tauri::command]
@@ -67,6 +71,7 @@ pub fn tg_status(state: tauri::State<AppState>) -> Result<TgStatus, String> {
             linked: linked.is_some(),
             chat_id: linked,
             pairing_code: None,
+            last_error: setting(conn, "tg_last_error"),
         })
     })
 }

@@ -172,7 +172,7 @@ export const api = {
 
   tgStatus: () =>
     call(() =>
-      invoke<{ tokenSet: boolean; linked: boolean; chatId: number | null; pairingCode: string | null }>("tg_status"),
+      invoke<{ tokenSet: boolean; linked: boolean; chatId: number | null; pairingCode: string | null; lastError: string | null }>("tg_status"),
     ),
   tgConnect: (token: string) =>
     call(() => invoke<{ username: string; code: string }>("tg_connect", { token })),

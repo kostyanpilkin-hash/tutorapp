@@ -37,7 +37,7 @@ pub fn init_db() -> Result<AppState, String> {
     backup_db(&path);
 
     let conn = Connection::open(&path).map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA cache_size=-20000;")
         .map_err(|e| e.to_string())?;
     migrations::run(&conn)?;
     if let Err(e) = crate::commands::lessons::dedupe_all_exception_slots(&conn) {

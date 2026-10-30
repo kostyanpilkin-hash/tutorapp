@@ -258,18 +258,25 @@ pub async fn poll_loop(bot: Bot, run_id: u64) {
         if !is_running(run_id) { return; }
         match bot.get_updates(offset, 25).await {
             Ok(updates) => {
+                let n = updates.len() as i64;
                 for u in updates {
                     offset = u.update_id + 1;
                     if let Err(e) = handle_update(&bot, u).await {
                         eprintln!("tg update error: {e}");
                     }
                 }
-                if let Ok(conn) = open_db() {
-                    let _ = set_setting(&conn, "tg_offset", &offset.to_string());
+                // Persist offset only periodically, not per update.
+                if n > 0 && offset % 20 < n {
+                    if let Ok(conn) = open_db() {
+                        let _ = set_setting(&conn, "tg_offset", &offset.to_string());
+                    }
                 }
             }
             Err(e) => {
                 eprintln!("tg poll error: {e}");
+                if let Ok(conn) = open_db() {
+                    let _ = set_setting(&conn, "tg_last_error", &e);
+                }
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }

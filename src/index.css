@@ -1081,3 +1081,7 @@ html.theme-notion [data-student-card]::before {
 }
 html.theme-notion [data-student-card] { position: relative; }
 html.theme-notion [data-student-card]:hover::before { opacity: 1; }
+
+/* Perf: cap list-item entrance animations and defer offscreen rendering. */
+.animate-fade-up:nth-child(n+50) { animation: none; }
+.space-y-1 > *, .space-y-2 > *, [data-student-card] { content-visibility: auto; contain-intrinsic-size: auto 48px; }
