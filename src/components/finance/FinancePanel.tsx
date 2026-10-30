@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bar,
   BarChart,
@@ -14,9 +15,10 @@ import {
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { addDays, addMonths, addYears, format } from "date-fns";
 import { ru, enUS, be as beLocale } from "date-fns/locale";
-import type { FinancePeriod, FinanceReport } from "@/types/lesson";
+import type { FinancePeriod } from "@/types/lesson";
 import type { DebtEntry } from "@/types/student";
 import { api } from "@/lib/api";
+import { keys, invalidateAppData } from "@/lib/queryKeys";
 import { PaymentDetailsPanel } from "@/components/finance/PaymentDetailsPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -191,58 +193,44 @@ export function FinancePanel() {
   const [anchor, setAnchor] = useState(new Date());
   const [customFrom, setCustomFrom] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [customTo, setCustomTo] = useState(() => format(new Date(), "yyyy-MM-dd"));
-  const [report, setReport] = useState<FinanceReport | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [debts, setDebts] = useState<DebtEntry[]>([]);
-  const [payingDebt, setPayingDebt] = useState<string | null>(null);
+  const queryClient = useQueryClient();
   const showSuccess = useToastStore((state) => state.success);
 
-  const loadDebts = useCallback(async () => {
-    try {
-      setDebts(await api.getDebtLessons());
-    } catch {
-      setDebts([]);
-    }
-  }, []);
+  const anchorIso = localAnchorIso(anchor);
+  const customFromIso =
+    period === "custom" && customFrom
+      ? new Date(`${customFrom}T00:00:00`).toISOString()
+      : undefined;
+  const customToIso =
+    period === "custom" && customTo
+      ? new Date(`${customTo}T23:59:59`).toISOString()
+      : undefined;
+  const reportQuery = useQuery({
+    queryKey: keys.finance.report(period, anchorIso, customFromIso, customToIso),
+    queryFn: () =>
+      api.getFinanceReport(period, anchorIso, customFromIso, customToIso),
+  });
+  const report = reportQuery.data ?? null;
+  const loading = reportQuery.isPending;
 
-  useEffect(() => {
-    if (tab === "debts") void loadDebts();
-  }, [tab, loadDebts]);
+  const debtsQuery = useQuery({
+    queryKey: keys.finance.debts(),
+    queryFn: () => api.getDebtLessons(),
+    enabled: tab === "debts",
+  });
+  const debts = debtsQuery.data ?? [];
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const fromIso = customFrom ? new Date(`${customFrom}T00:00:00`).toISOString() : undefined;
-      const toIso = customTo ? new Date(`${customTo}T23:59:59`).toISOString() : undefined;
-      const data = await api.getFinanceReport(
-        period,
-        localAnchorIso(anchor),
-        period === "custom" ? fromIso : undefined,
-        period === "custom" ? toIso : undefined,
-      );
-      setReport(data);
-    } catch {
-      setReport(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [period, anchor, customFrom, customTo]);
-
-  const markDebtPaid = async (debt: DebtEntry) => {
-    const key = `${debt.lessonId}-${debt.studentId}`;
-    setPayingDebt(key);
-    try {
-      await api.markDebtPaid(debt.lessonId, debt.studentId);
-      await Promise.all([loadDebts(), load()]);
+  const payMutation = useMutation({
+    mutationFn: (debt: DebtEntry) => api.markDebtPaid(debt.lessonId, debt.studentId),
+    onSuccess: () => {
       showSuccess(t("finance.paymentRecorded"));
-    } finally {
-      setPayingDebt(null);
-    }
-  };
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+    },
+    onSettled: () => invalidateAppData(queryClient),
+  });
+  const payingDebt =
+    payMutation.isPending && payMutation.variables
+      ? `${payMutation.variables.lessonId}-${payMutation.variables.studentId}`
+      : null;
 
   const shiftAnchor = (dir: -1 | 1) => {
     setAnchor((a) => {
@@ -316,7 +304,7 @@ export function FinancePanel() {
           debts={debts}
           locale={numberLocale}
           payingDebt={payingDebt}
-          onMarkPaid={markDebtPaid}
+          onMarkPaid={(debt) => payMutation.mutate(debt)}
           t={t}
         />
       ) : tab === "details" ? (

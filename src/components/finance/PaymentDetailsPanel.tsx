@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, CreditCard, Pencil, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { keys } from "@/lib/queryKeys";
 import { useToastStore } from "@/stores/toastStore";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,31 +47,32 @@ function createId(): string {
 
 export function PaymentDetailsPanel() {
   const { t } = useTranslation();
-  const [groups, setGroups] = useState<PaymentDetailsGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
 
-  const persist = useCallback(async (next: PaymentDetailsGroup[]) => {
-    await api.setSetting(SETTINGS_KEY, JSON.stringify(next));
-    setGroups(next);
-  }, []);
+  const settingsQuery = useQuery({
+    queryKey: keys.settings(),
+    queryFn: () => api.getSettings(),
+  });
+  const groups = parseGroups(settingsQuery.data?.[SETTINGS_KEY]);
+  const loading = settingsQuery.isPending;
 
+  // Заполнить дефолтными реквизитами при первом запуске
   useEffect(() => {
-    void api
-      .getSettings()
-      .then(async (settings) => {
-        const next = parseGroups(settings[SETTINGS_KEY]);
-        setGroups(next);
-        if (settings[SETTINGS_KEY] === undefined) {
-          await api.setSetting(SETTINGS_KEY, JSON.stringify(next));
-        }
-      })
-      .catch(() => setGroups([]))
-      .finally(() => setLoading(false));
-  }, []);
+    if (settingsQuery.data && settingsQuery.data[SETTINGS_KEY] === undefined) {
+      void api
+        .setSetting(SETTINGS_KEY, JSON.stringify(parseGroups(undefined)))
+        .then(() => queryClient.invalidateQueries({ queryKey: keys.settings() }));
+    }
+  }, [settingsQuery.data, queryClient]);
+
+  const persist = async (next: PaymentDetailsGroup[]) => {
+    await api.setSetting(SETTINGS_KEY, JSON.stringify(next));
+    await queryClient.invalidateQueries({ queryKey: keys.settings() });
+  };
 
   const openCreate = () => {
     setEditingId(null);
