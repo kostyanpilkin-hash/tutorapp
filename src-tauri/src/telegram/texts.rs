@@ -153,13 +153,7 @@ impl T {
             L::Be => format!("{n} хв"),
         }
     }
-    pub fn stats_lessons(&self, n: usize) -> String {
-        match self.0 {
-            L::Ru => format!("{n} занятий"),
-            L::En => format!("{n} lessons"),
-            L::Be => format!("{n} заняткаў"),
-        }
-    }
+
     pub fn stats_done(&self, n: usize) -> String {
         match self.0 {
             L::Ru => format!("{n} проведено"),

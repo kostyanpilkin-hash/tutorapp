@@ -205,7 +205,7 @@ fn day_stats(t: &T, occs: &[Occ]) -> String {
     let left = occs.iter().filter(|o| o.status == "scheduled").count();
     let noshow = occs.iter().filter(|o| o.status == "no_show").count();
     let cancelled = occs.iter().filter(|o| o.status == "cancelled").count();
-    let mut parts = vec![format!("{} · {}", t.stats_lessons(occs.len()), t.stats_done(done))];
+    let mut parts = vec![format!("{} · {}", t.lessons_count(occs.len() as i64), t.stats_done(done))];
     if left > 0 { parts.push(t.stats_left(left)); }
     if noshow > 0 { parts.push(format!("{} ❌", noshow)); }
     if cancelled > 0 { parts.push(format!("{} 🚫", cancelled)); }
