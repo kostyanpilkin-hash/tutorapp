@@ -38,9 +38,6 @@ const HISTORY_STEP = 50;
 interface Props {
   onOpenLesson?: (lesson: Lesson) => void;
   onCreateLesson?: (studentId: string) => void;
-  onStudentChanged?: () => void;
-  /** Инкремент при изменении расписания — перезагружает историю */
-  refreshKey?: number;
 }
 
 function AmountBlock({
@@ -74,7 +71,7 @@ function AmountBlock({
   );
 }
 
-export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, refreshKey = 0 }: Props) {
+export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
   const tutorTimezone = useSettingsStore((s) => s.timezone);
@@ -135,7 +132,7 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
       setExpandedLessons([]);
       setFinance(null);
     }
-  }, [selectedId, loadDetail, refreshKey]);
+  }, [selectedId, loadDetail]);
 
   useEffect(() => {
     setHistoryLimit(HISTORY_STEP);
@@ -259,7 +256,6 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
   const refreshHistory = async () => {
     if (!selectedId) return;
     await loadDetail(selectedId);
-    onStudentChanged?.();
   };
 
   const refreshFinance = async () => {
@@ -565,7 +561,7 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, onStudentChanged, 
         onClose={() => setFormOpen(false)}
         onSaved={() => {
           void loadStudents();
-          onStudentChanged?.();
+          void useSettingsStore.getState().setOnboardingDone();
         }}
       />
       <Dialog open={messageDialogOpen} onOpenChange={setMessageDialogOpen}>

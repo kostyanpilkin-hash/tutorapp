@@ -14,6 +14,8 @@ import {
 } from "@/lib/recurrence";
 import type { Lesson, LessonInput, LessonStatus, PaymentStatus } from "@/types/lesson";
 import { lessonToInput } from "@/types/lesson";
+import { queryClient } from "@/lib/queryClient";
+import { invalidateAppData } from "@/lib/queryKeys";
 
 export function lessonPaymentStatus(lesson: Lesson): PaymentStatus {
   if (lesson.students.length === 0) return lesson.paymentStatus;
@@ -36,16 +38,17 @@ export async function persistLessonChange(
   patch: Partial<LessonInput>,
 ): Promise<Lesson> {
   const base = lessonToInput(lesson);
-  if (lesson.id.includes("::")) {
-    return api.createLesson({
-      ...base,
-      ...patch,
-      recurrenceRule: null,
-      recurrenceParentId: parentLessonId(lesson),
-      recurrenceInstanceDate: lesson.recurrenceInstanceDate || lesson.startAt,
-    });
-  }
-  return api.updateLesson(lesson.id, { ...base, ...patch });
+  const saved = lesson.id.includes("::")
+    ? await api.createLesson({
+        ...base,
+        ...patch,
+        recurrenceRule: null,
+        recurrenceParentId: parentLessonId(lesson),
+        recurrenceInstanceDate: lesson.recurrenceInstanceDate || lesson.startAt,
+      })
+    : await api.updateLesson(lesson.id, { ...base, ...patch });
+  await invalidateAppData(queryClient);
+  return saved;
 }
 
 export async function setLessonStatus(
@@ -97,11 +100,13 @@ export async function deleteLessonSeries(lesson: Lesson): Promise<{ archiveId: s
   const parentId = parentLessonId(lesson);
   const instanceDate = lesson.recurrenceInstanceDate || lesson.startAt;
   const archiveId = await api.deleteLessonSeriesFromInstance(parentId, instanceDate);
+  await invalidateAppData(queryClient);
   return { archiveId };
 }
 
 export async function restoreLessonArchive(archiveId: string): Promise<void> {
   await api.restoreLessonArchive(archiveId);
+  await invalidateAppData(queryClient);
 }
 
 /**
@@ -112,10 +117,15 @@ export async function deleteLessonInstance(lesson: Lesson): Promise<{ undo: () =
   const snapshot = lessonToInput(lesson);
   const parentId = parentLessonId(lesson);
   const instanceDate = lesson.recurrenceInstanceDate || lesson.startAt;
+  const undoing = (fn: () => Promise<unknown>) => async () => {
+    await fn();
+    await invalidateAppData(queryClient);
+  };
 
   if (lesson.recurrenceParentId && !lesson.id.includes("::")) {
     await api.updateLesson(lesson.id, { ...snapshot, status: "cancelled" });
-    return { undo: () => api.updateLesson(lesson.id, snapshot).then(() => undefined) };
+    await invalidateAppData(queryClient);
+    return { undo: undoing(() => api.updateLesson(lesson.id, snapshot)) };
   }
 
   if (isRecurrenceInstance(lesson) || lesson.recurrenceRule) {
@@ -127,20 +137,21 @@ export async function deleteLessonInstance(lesson: Lesson): Promise<{ undo: () =
       status: "cancelled",
       startAt: instanceDate,
     });
-    return { undo: () => api.deleteLesson(created.id) };
+    await invalidateAppData(queryClient);
+    return { undo: undoing(() => api.deleteLesson(created.id)) };
   }
 
   await api.deleteLesson(lesson.id);
+  await invalidateAppData(queryClient);
   return {
-    undo: () =>
-      api
-        .createLesson({
-          ...snapshot,
-          recurrenceRule: null,
-          recurrenceParentId: null,
-          recurrenceInstanceDate: null,
-        })
-        .then(() => undefined),
+    undo: undoing(() =>
+      api.createLesson({
+        ...snapshot,
+        recurrenceRule: null,
+        recurrenceParentId: null,
+        recurrenceInstanceDate: null,
+      }),
+    ),
   };
 }
 
@@ -188,6 +199,7 @@ export async function rescheduleSeriesFromInstance(lesson: Lesson, time: string)
   try {
     const until = endOfDay(addDays(slot, -1));
     await api.updateLesson(parentId, { ...input, recurrenceRule: withUntil(oldRule, until) });
+    await invalidateAppData(queryClient);
   } catch (e) {
     await api.deleteLesson(created.id).catch(() => undefined);
     throw e;

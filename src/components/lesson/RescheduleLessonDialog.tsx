@@ -12,16 +12,14 @@ import { useToastStore } from "@/stores/toastStore";
 
 interface RescheduleState {
   lesson: Lesson | null;
-  onChanged?: () => void;
-  open: (lesson: Lesson, onChanged: () => void) => void;
+  open: (lesson: Lesson) => void;
   close: () => void;
 }
 
 export const useRescheduleLessonStore = create<RescheduleState>((set) => ({
   lesson: null,
-  onChanged: undefined,
-  open: (lesson, onChanged) => set({ lesson, onChanged }),
-  close: () => set({ lesson: null, onChanged: undefined }),
+  open: (lesson) => set({ lesson }),
+  close: () => set({ lesson: null }),
 }));
 
 const START_HOUR = 7;
@@ -39,7 +37,7 @@ function slotLabel(date: Date, durationMinutes: number): string {
 
 export function RescheduleLessonDialog() {
   const { t } = useTranslation();
-  const { lesson, onChanged, close } = useRescheduleLessonStore();
+  const { lesson, close } = useRescheduleLessonStore();
   const [date, setDate] = useState("");
   const [slots, setSlots] = useState<Date[]>([]);
   const [selected, setSelected] = useState<Date | null>(null);
@@ -96,7 +94,6 @@ export function RescheduleLessonDialog() {
         return;
       }
       await rescheduleLesson(lesson, selected);
-      onChanged?.();
       useToastStore.getState().success(t("lesson.movedToast"));
       close();
     } catch (e) {

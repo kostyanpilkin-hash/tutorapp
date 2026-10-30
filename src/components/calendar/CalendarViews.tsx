@@ -20,6 +20,8 @@ import { api } from "@/lib/api";
 import { resolveNewStart } from "@/lib/calendarLayout";
 import { formatTimeInTimezone } from "@/lib/contacts";
 import { realLessonId, isRecurrenceInstance, parentLessonId } from "@/lib/recurrence";
+import { queryClient } from "@/lib/queryClient";
+import { invalidateAppData } from "@/lib/queryKeys";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
 import { cn } from "@/lib/utils";
@@ -36,15 +38,12 @@ interface Props {
   lessons: Lesson[];
   anchor: Date;
   onSelect: (lesson: Lesson) => void;
-  onMoved: () => void;
   onCreate?: (date: Date) => void;
-  onChanged?: () => void;
 }
 
 async function moveLesson(
   lesson: Lesson,
   newStart: Date,
-  onMoved: () => void,
   overlapConfirm: (names: string) => boolean,
   undoLabel: string,
   movedMessage: string,
@@ -89,7 +88,7 @@ async function moveLesson(
     updatedId = realLessonId(lesson.id);
     await api.updateLesson(updatedId, input);
   }
-  onMoved();
+  await invalidateAppData(queryClient);
 
   useToastStore.getState().info(movedMessage, {
     label: undoLabel,
@@ -104,7 +103,7 @@ async function moveLesson(
               startAt: previousStart,
             });
           }
-          onMoved();
+          await invalidateAppData(queryClient);
         } catch {
           useToastStore.getState().error(undoFailedMessage);
         }
@@ -373,10 +372,10 @@ function MonthDayCell({
   );
 }
 
-export function WeekView({ lessons, anchor, onSelect, onMoved, onCreate }: Props) {
+export function WeekView({ lessons, anchor, onSelect, onCreate }: Props) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
-  const { show } = useLessonContextMenu({ onOpen: onSelect, onChanged: onMoved });
+  const { show } = useLessonContextMenu({ onOpen: onSelect });
   const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
@@ -392,7 +391,6 @@ export function WeekView({ lessons, anchor, onSelect, onMoved, onCreate }: Props
     await moveLesson(
       lesson,
       moveToDay(lesson, targetDay),
-      onMoved,
       (names) =>
         window.confirm(`${t("lesson.overlap")}: ${names}. ${t("lesson.overlapDragConfirm")}`),
       t("common.undo"),
@@ -437,10 +435,10 @@ export function WeekView({ lessons, anchor, onSelect, onMoved, onCreate }: Props
   );
 }
 
-export function DayView({ lessons, anchor, onSelect, onMoved, onCreate }: Props) {
+export function DayView({ lessons, anchor, onSelect, onCreate }: Props) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
-  const { show } = useLessonContextMenu({ onOpen: onSelect, onChanged: onMoved });
+  const { show } = useLessonContextMenu({ onOpen: onSelect });
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const handleDragEnd = async (event: DragEndEvent) => {
@@ -453,7 +451,6 @@ export function DayView({ lessons, anchor, onSelect, onMoved, onCreate }: Props)
     await moveLesson(
       lesson,
       newStart,
-      onMoved,
       (names) =>
         window.confirm(`${t("lesson.overlap")}: ${names}. ${t("lesson.overlapDragConfirm")}`),
       t("common.undo"),
@@ -485,15 +482,10 @@ export function MonthView({
   anchor,
   onSelect,
   onCreate,
-  onMoved,
-}: Omit<Props, "onMoved"> & { onMoved?: () => void }) {
+}: Props) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
-  const changed = onMoved ?? (() => undefined);
-  const { show } = useLessonContextMenu({
-    onOpen: onSelect,
-    onChanged: changed,
-  });
+  const { show } = useLessonContextMenu({ onOpen: onSelect });
   const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const start = startOfWeek(first, { weekStartsOn: 1 });
   const cells = Array.from({ length: 42 }, (_, i) => addDays(start, i));
@@ -512,7 +504,6 @@ export function MonthView({
     await moveLesson(
       lesson,
       moveToDay(lesson, targetDay),
-      changed,
       (names) =>
         window.confirm(`${t("lesson.overlap")}: ${names}. ${t("lesson.overlapDragConfirm")}`),
       t("common.undo"),
@@ -599,15 +590,11 @@ export function MonthView({
 export function AgendaView({
   lessons,
   onSelect,
-  onChanged,
-}: Pick<Props, "lessons" | "onSelect"> & { onChanged?: () => void }) {
+}: Pick<Props, "lessons" | "onSelect">) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
   const tutorTimezone = useSettingsStore((s) => s.timezone);
-  const { show } = useLessonContextMenu({
-    onOpen: onSelect,
-    onChanged: onChanged ?? (() => undefined),
-  });
+  const { show } = useLessonContextMenu({ onOpen: onSelect });
 
   return (
     <div className="space-y-2 overflow-auto p-3">

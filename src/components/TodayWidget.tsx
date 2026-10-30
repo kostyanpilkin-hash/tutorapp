@@ -39,7 +39,6 @@ interface Props {
   loading?: boolean;
   onSelect: (lesson: Lesson) => void;
   onCreate: () => void;
-  onChanged: () => void;
   activeDate: Date;
   onPrevDay: () => void;
   onNextDay: () => void;
@@ -86,14 +85,13 @@ export function TodayWidget({
   loading,
   onSelect,
   onCreate,
-  onChanged,
   activeDate,
   onPrevDay,
   onNextDay,
 }: Props) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
-  const { show } = useLessonContextMenu({ onOpen: onSelect, onChanged });
+  const { show } = useLessonContextMenu({ onOpen: onSelect });
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -121,7 +119,6 @@ export function TodayWidget({
   ) => {
     try {
       await fn();
-      onChanged();
       useToastStore.getState().info(message, action);
     } catch {
       // api toasts errors

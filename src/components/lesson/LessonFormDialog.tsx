@@ -10,6 +10,8 @@ import { CURRENCIES } from "@/lib/money";
 import { formatTimeInTimezone } from "@/lib/contacts";
 import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, withUntil, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
 import { hrefFor, textHasLinks } from "@/lib/linkify";
+import { queryClient } from "@/lib/queryClient";
+import { invalidateAppData } from "@/lib/queryKeys";
 import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useToastStore } from "@/stores/toastStore";
@@ -428,6 +430,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       await api.updateStudent(s.id, { ...studentToInput(s), notes: next });
     }
 
+    await invalidateAppData(queryClient);
     onSaved();
     onClose();
   };
@@ -489,6 +492,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       await api.deleteLesson(lesson.id);
     }
 
+    await invalidateAppData(queryClient);
     onSaved();
     onClose();
 
@@ -508,6 +512,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                 recurrenceInstanceDate: snapshot.recurrenceInstanceDate ?? null,
               });
             }
+            await invalidateAppData(queryClient);
             onSaved();
           } catch {
             useToastStore.getState().error(t("lesson.undoFailed"));

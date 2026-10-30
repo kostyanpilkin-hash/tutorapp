@@ -1,15 +1,17 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { addDays, addMonths, format, subDays, subMonths } from "date-fns";
 import { Bell, Calendar, ChevronLeft, ChevronRight, History, Plus, Settings, Users, Wallet } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useShallow } from "zustand/react/shallow";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useLessonStore } from "@/stores/lessonStore";
 import { useToastStore } from "@/stores/toastStore";
 import { api } from "@/lib/api";
-import { defaultRange } from "@/lib/recurrence";
+import { todayBoundsInTimezone } from "@/lib/contacts";
+import { defaultRange, loadExpandedLessons } from "@/lib/recurrence";
+import { keys } from "@/lib/queryKeys";
 import type { CalendarView, Lesson } from "@/types/lesson";
 import { TodayWidget } from "@/components/TodayWidget";
 import { LessonFormDialog } from "@/components/lesson/LessonFormDialog";
@@ -42,6 +44,7 @@ export default function App() {
     load,
     loaded,
     language,
+    timezone,
     onboardingDone,
     setOnboardingDone,
   } = useSettingsStore(
@@ -53,21 +56,12 @@ export default function App() {
       load: s.load,
       loaded: s.loaded,
       language: s.language,
+      timezone: s.timezone,
       onboardingDone: s.onboardingDone,
       setOnboardingDone: s.setOnboardingDone,
     })),
   );
-  const { expanded, todayLessons, todayLoading, loading, fetchRange, fetchDay, refresh } = useLessonStore(
-    useShallow((s) => ({
-      expanded: s.expanded,
-      todayLessons: s.todayLessons,
-      todayLoading: s.todayLoading,
-      loading: s.loading,
-      fetchRange: s.fetchRange,
-      fetchDay: s.fetchDay,
-      refresh: s.refresh,
-    })),
-  );
+  const queryClient = useQueryClient();
   const [page, setPage] = useState<Page>("home");
   const [todayDate, setTodayDate] = useState(() => new Date());
   const [formOpen, setFormOpen] = useState(false);
@@ -75,38 +69,39 @@ export default function App() {
   const [createDate, setCreateDate] = useState<Date | undefined>();
   const [createStudentIds, setCreateStudentIds] = useState<string[] | undefined>();
   const [studentCount, setStudentCount] = useState<number | null>(null);
-  const [lessonsVersion, setLessonsVersion] = useState(0);
+
+  const dayBounds = todayBoundsInTimezone(timezone, todayDate);
+  const dayQuery = useQuery({
+    queryKey: keys.lessons.day(dayBounds.from.toISOString(), dayBounds.to.toISOString()),
+    queryFn: () => loadExpandedLessons(dayBounds.from, dayBounds.to),
+    enabled: loaded && page === "home",
+  });
+  const todayLessons = useMemo(
+    () =>
+      [...(dayQuery.data ?? [])].sort(
+        (a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime(),
+      ),
+    [dayQuery.data],
+  );
+  const todayLoading = dayQuery.isPending;
+
+  const range = defaultRange(view, anchorDate);
+  const rangeQuery = useQuery({
+    queryKey: keys.lessons.range(range.from.toISOString(), range.to.toISOString()),
+    queryFn: () => loadExpandedLessons(range.from, range.to),
+    enabled: loaded && page !== "home",
+  });
+  const expanded = rangeQuery.data ?? [];
+  const loading = rangeQuery.isPending;
 
   const goToToday = useCallback(() => {
     setTodayDate(new Date());
     setPage("home");
   }, []);
 
-  const reload = useCallback(async () => {
-    if (page === "home") {
-      await fetchDay(todayDate);
-      setLessonsVersion((v) => v + 1);
-      return;
-    }
-
-    const { from, to } = defaultRange(view, anchorDate);
-    await refresh(from, to);
-    setLessonsVersion((v) => v + 1);
-  }, [page, view, anchorDate, todayDate, refresh, fetchDay]);
-
   useEffect(() => {
     void load().then(() => i18n.changeLanguage(language));
   }, [load, language]);
-
-  useEffect(() => {
-    if (!loaded) return;
-    if (page === "home") {
-      void fetchDay(todayDate);
-      return;
-    }
-    const { from, to } = defaultRange(view, anchorDate);
-    void fetchRange(from, to);
-  }, [loaded, page, view, anchorDate, todayDate, fetchRange, fetchDay]);
 
   useEffect(() => {
     if (!loaded || onboardingDone) return;
@@ -198,7 +193,7 @@ export default function App() {
   // Refresh data when the app regains focus (e.g. after bot actions).
   useEffect(() => {
     const onVis = () => {
-      if (document.visibilityState === "visible") void reload();
+      if (document.visibilityState === "visible") void queryClient.invalidateQueries();
     };
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("focus", onVis);
@@ -206,7 +201,7 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onVis);
     };
-  }, [reload]);
+  }, [queryClient]);
 
   const views: { id: CalendarView; label: string }[] = [
     { id: "week", label: t("views.week") },
@@ -271,7 +266,6 @@ export default function App() {
                 onNextDay={() => setTodayDate(addDays(todayDate, 1))}
                 onSelect={openEdit}
                 onCreate={() => openCreate()}
-                onChanged={() => void reload()}
               />
             </div>
           )}
@@ -306,7 +300,7 @@ export default function App() {
                   </div>
                 )}
                 {view === "week" && (
-                  <WeekView lessons={expanded} anchor={anchorDate} onSelect={openEdit} onMoved={() => void reload()} onCreate={openCreate} />
+                  <WeekView lessons={expanded} anchor={anchorDate} onSelect={openEdit} onCreate={openCreate} />
                 )}
                 {view === "month" && (
                   <MonthView
@@ -314,7 +308,6 @@ export default function App() {
                     anchor={anchorDate}
                     onSelect={openEdit}
                     onCreate={openCreate}
-                    onMoved={() => void reload()}
                   />
                 )}
               </div>
@@ -342,11 +335,6 @@ export default function App() {
 
           {page === "students" && (
             <StudentsPanel
-              refreshKey={lessonsVersion}
-              onStudentChanged={() => {
-                void reload();
-                if (!onboardingDone) void setOnboardingDone();
-              }}
               onOpenLesson={(lesson) => {
                 setSelectedLesson(lesson);
                 setCreateStudentIds(undefined);
@@ -373,7 +361,6 @@ export default function App() {
             setCreateStudentIds(undefined);
           }}
           onSaved={() => {
-            void reload();
             if (!onboardingDone) void setOnboardingDone();
             useToastStore.getState().info(t("lesson.savedToast"), {
               label: t("app.today"),

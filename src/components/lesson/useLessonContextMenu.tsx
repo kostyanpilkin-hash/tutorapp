@@ -28,17 +28,15 @@ import { useRescheduleSeriesStore } from "@/components/lesson/RescheduleSeriesDi
 
 interface Options {
   onOpen: (lesson: Lesson) => void;
-  onChanged: () => void;
 }
 
-export function useLessonContextMenu({ onOpen, onChanged }: Options) {
+export function useLessonContextMenu({ onOpen }: Options) {
   const { t } = useTranslation();
   const { open } = useContextMenu();
 
   const run = async (fn: () => Promise<void>, okMessage: string, action?: { label: string; onClick: () => void }) => {
     try {
       await fn();
-      onChanged();
       useToastStore.getState().info(okMessage, action);
     } catch {
       // api already toasts errors
@@ -50,13 +48,11 @@ export function useLessonContextMenu({ onOpen, onChanged }: Options) {
     void (async () => {
       try {
         const result = await deleteLessonInstance(lesson);
-        onChanged();
         useToastStore.getState().info(t("lesson.deletedToast"), {
           label: t("common.undo"),
           onClick: () => {
             void result
               .undo()
-              .then(() => onChanged())
               .catch(() => useToastStore.getState().error(t("lesson.undoFailed")));
           },
         });
@@ -71,12 +67,10 @@ export function useLessonContextMenu({ onOpen, onChanged }: Options) {
     void (async () => {
       try {
         const { archiveId } = await deleteLessonSeries(lesson);
-        onChanged();
         useToastStore.getState().info(t("lesson.seriesDeleted"), {
           label: t("common.undo"),
           onClick: () => {
             void restoreLessonArchive(archiveId)
-              .then(() => onChanged())
               .catch(() => useToastStore.getState().error(t("lesson.undoFailed")));
           },
         });
@@ -152,14 +146,14 @@ export function useLessonContextMenu({ onOpen, onChanged }: Options) {
           {
             id: "rescheduleThis",
             label: t("lesson.rescheduleThis"),
-            onSelect: () => useRescheduleLessonStore.getState().open(lesson, onChanged),
+            onSelect: () => useRescheduleLessonStore.getState().open(lesson),
           },
           ...(isRecurring
             ? [
                 {
                   id: "rescheduleSeries",
                   label: t("lesson.rescheduleSeries"),
-                  onSelect: () => useRescheduleSeriesStore.getState().open(lesson, onChanged),
+                  onSelect: () => useRescheduleSeriesStore.getState().open(lesson),
                 },
               ]
             : []),

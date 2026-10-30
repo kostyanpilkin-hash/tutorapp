@@ -12,21 +12,19 @@ import { useToastStore } from "@/stores/toastStore";
 
 interface RescheduleSeriesState {
   lesson: Lesson | null;
-  onChanged?: () => void;
-  open: (lesson: Lesson, onChanged: () => void) => void;
+  open: (lesson: Lesson) => void;
   close: () => void;
 }
 
 export const useRescheduleSeriesStore = create<RescheduleSeriesState>((set) => ({
   lesson: null,
-  onChanged: undefined,
-  open: (lesson, onChanged) => set({ lesson, onChanged }),
-  close: () => set({ lesson: null, onChanged: undefined }),
+  open: (lesson) => set({ lesson }),
+  close: () => set({ lesson: null }),
 }));
 
 export function RescheduleSeriesDialog() {
   const { t } = useTranslation();
-  const { lesson, onChanged, close } = useRescheduleSeriesStore();
+  const { lesson, close } = useRescheduleSeriesStore();
   const [time, setTime] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -41,7 +39,6 @@ export function RescheduleSeriesDialog() {
     setSaving(true);
     try {
       await rescheduleSeriesFromInstance(lesson, time);
-      onChanged?.();
       useToastStore.getState().success(t("lesson.seriesMovedToast"));
       close();
     } catch (e) {
