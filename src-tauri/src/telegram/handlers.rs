@@ -360,14 +360,14 @@ fn debts_message(t: &T, conn: &Connection) -> Result<String, String> {
     let mut stmt = conn
         .prepare(
             "SELECT s.name, COUNT(*), SUM(COALESCE(ls.cost, l.cost)) AS total,
-                    COALESCE(NULLIF(ls.currency,''), NULLIF(l.currency,''), 'USD') AS currency
+                    COALESCE(NULLIF(ls.currency,''), NULLIF(l.currency,''), 'USD') AS cur
              FROM lessons l
              INNER JOIN lesson_students ls ON ls.lesson_id = l.id
              INNER JOIN students s ON s.id = ls.student_id
              WHERE l.status IN ('completed','no_show')
                AND COALESCE(NULLIF(ls.payment_status,''), l.payment_status) != 'paid'
                AND COALESCE(ls.cost, l.cost) > 0
-             GROUP BY s.name, currency ORDER BY s.name",
+             GROUP BY s.name, cur ORDER BY s.name",
         )
         .map_err(|e| e.to_string())?;
     let rows: Vec<(String, i64, f64, String)> = stmt
