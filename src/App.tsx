@@ -13,6 +13,7 @@ import { todayBoundsInTimezone } from "@/lib/contacts";
 import { defaultRange, loadExpandedLessons } from "@/lib/recurrence";
 import { keys } from "@/lib/queryKeys";
 import type { CalendarView, Lesson } from "@/types/lesson";
+import { CommandPalette } from "@/components/CommandPalette";
 import { TodayWidget } from "@/components/TodayWidget";
 import { LessonFormDialog } from "@/components/lesson/LessonFormDialog";
 import { RescheduleLessonDialog } from "@/components/lesson/RescheduleLessonDialog";
@@ -47,6 +48,7 @@ export default function App() {
     timezone,
     onboardingDone,
     setOnboardingDone,
+    setTheme,
   } = useSettingsStore(
     useShallow((s) => ({
       view: s.view,
@@ -59,6 +61,7 @@ export default function App() {
       timezone: s.timezone,
       onboardingDone: s.onboardingDone,
       setOnboardingDone: s.setOnboardingDone,
+      setTheme: s.setTheme,
     })),
   );
   const queryClient = useQueryClient();
@@ -68,6 +71,8 @@ export default function App() {
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [createDate, setCreateDate] = useState<Date | undefined>();
   const [createStudentIds, setCreateStudentIds] = useState<string[] | undefined>();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [focusStudent, setFocusStudent] = useState<{ id: string; seq: number } | null>(null);
   const studentCountQuery = useQuery({
     queryKey: keys.students.all(false),
     queryFn: () => api.getStudents(false),
@@ -150,6 +155,11 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
       if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
@@ -335,6 +345,7 @@ export default function App() {
 
           {page === "students" && (
             <StudentsPanel
+              focusStudent={focusStudent}
               onOpenLesson={(lesson) => {
                 setSelectedLesson(lesson);
                 setCreateStudentIds(undefined);
@@ -370,6 +381,22 @@ export default function App() {
         />
         <RescheduleLessonDialog />
         <RescheduleSeriesDialog />
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          onNavigate={(p) => {
+            if (p === "home") goToToday();
+            else setPage(p);
+          }}
+          onNewLesson={() => openCreate()}
+          onGoToday={goToToday}
+          onOpenLesson={openEdit}
+          onOpenStudent={(id) => {
+            setFocusStudent((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
+            setPage("students");
+          }}
+          onSetTheme={(theme) => void setTheme(theme)}
+        />
         <ToastHost />
       </div>
     </ContextMenuProvider>

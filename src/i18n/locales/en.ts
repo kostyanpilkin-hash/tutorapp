@@ -1,5 +1,15 @@
 const en = {
   app: { title: "TutorApp", today: "Today", calendar: "Calendar", students: "Students", reminders: "Reminders", finance: "Finance", history: "History", settings: "Settings" },
+  palette: {
+    title: "Command palette",
+    placeholder: "Command, student or lesson…",
+    commands: "Commands",
+    lessons: "Lessons",
+    themes: "Themes",
+    newLesson: "New lesson",
+    goToday: "Go to today",
+    empty: "Nothing found",
+  },
   history: {
     title: "History",
     empty: "No entries yet",
@@ -320,6 +330,7 @@ const en = {
     },
     shortcuts: {
       title: "Keyboard Shortcuts",
+      palette: "Command palette and search",
       newLesson: "Create new lesson",
       today: "Go to today",
       calendar: "Open calendar",

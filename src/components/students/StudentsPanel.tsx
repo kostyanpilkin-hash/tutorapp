@@ -39,6 +39,7 @@ const HISTORY_STEP = 50;
 interface Props {
   onOpenLesson?: (lesson: Lesson) => void;
   onCreateLesson?: (studentId: string) => void;
+  focusStudent?: { id: string; seq: number } | null;
 }
 
 function AmountBlock({
@@ -72,7 +73,7 @@ function AmountBlock({
   );
 }
 
-export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
+export function StudentsPanel({ onOpenLesson, onCreateLesson, focusStudent }: Props) {
   const { t, i18n } = useTranslation();
   const locale = locales[i18n.language as keyof typeof locales] || ru;
   const tutorTimezone = useSettingsStore((s) => s.timezone);
@@ -140,6 +141,10 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson }: Props) {
   const loading =
     detailEnabled &&
     (lessonsQuery.isPending || financeQuery.isPending || expandedQuery.isPending);
+
+  useEffect(() => {
+    if (focusStudent) setSelectedId(focusStudent.id);
+  }, [focusStudent]);
 
   useEffect(() => {
     if (selectedId && students.length > 0 && !students.find((s) => s.id === selectedId)) {

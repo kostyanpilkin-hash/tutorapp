@@ -605,6 +605,7 @@ export function SettingsPanel() {
             <section>
               <h3 className="mb-2 font-semibold">{t("help.shortcuts.title")}</h3>
               <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                <li><kbd className="bg-muted px-1 rounded">Ctrl+K</kbd> - {t("help.shortcuts.palette")}</li>
                 <li><kbd className="bg-muted px-1 rounded">Ctrl+N</kbd> - {t("help.shortcuts.newLesson")}</li>
                 <li><kbd className="bg-muted px-1 rounded">Ctrl+1</kbd> - {t("help.shortcuts.today")}</li>
                 <li><kbd className="bg-muted px-1 rounded">Ctrl+2</kbd> - {t("help.shortcuts.calendar")}</li>

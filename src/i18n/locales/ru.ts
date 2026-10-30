@@ -1,5 +1,15 @@
 const ru = {
   app: { title: "TutorApp", today: "Сегодня", calendar: "Календарь", students: "Ученики", reminders: "Напоминания", finance: "Финансы", history: "История", settings: "Настройки" },
+  palette: {
+    title: "Палитра команд",
+    placeholder: "Команда, ученик или занятие…",
+    commands: "Команды",
+    lessons: "Занятия",
+    themes: "Темы",
+    newLesson: "Новое занятие",
+    goToday: "Перейти к сегодняшнему дню",
+    empty: "Ничего не найдено",
+  },
   history: {
     title: "История",
     empty: "Записей пока нет",
@@ -320,6 +330,7 @@ const ru = {
     },
     shortcuts: {
       title: "Горячие клавиши",
+      palette: "Палитра команд и поиск",
       newLesson: "Создать новое занятие",
       today: "Перейти на сегодня",
       calendar: "Открыть календарь",
