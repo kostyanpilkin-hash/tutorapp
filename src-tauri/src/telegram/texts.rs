@@ -66,6 +66,14 @@ impl T {
     pub fn test_ok(&self) -> &'static str { self.s("Связь с TutorApp работает ✅", "TutorApp connection works ✅", "Сувязь з TutorApp працуе ✅") }
     pub fn not_linked(&self) -> &'static str { self.s("Неверная команда. Используйте кнопки ниже.", "Unknown command. Use the buttons below.", "Невядомая каманда. Выкарыстоўвайце кнопкі ніжэй.") }
     pub fn paid_label(&self) -> &'static str { self.s("оплачено", "paid", "аплачана") }
+    pub fn unpaid_word(&self) -> &'static str { self.s("не оплачено", "unpaid", "не аплачана") }
+    pub fn minutes(&self, n: i64) -> String {
+        match self.0 {
+            L::Ru => format!("{n} мин"),
+            L::En => format!("{n} min"),
+            L::Be => format!("{n} хв"),
+        }
+    }
     pub fn stats_lessons(&self, n: usize) -> String {
         match self.0 {
             L::Ru => format!("{n} занятий"),

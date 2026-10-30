@@ -141,7 +141,7 @@ pub fn day_actions_markup(_t: &T, conn: &Connection, occs: &[Occ], tz: chrono_tz
 
 // ---------- formatting ----------
 
-fn status_icon(status: &str, _pay: &str) -> &'static str {
+fn status_icon(status: &str) -> &'static str {
     match status {
         "completed" => "✅",
         "no_show" => "❌",
@@ -150,39 +150,58 @@ fn status_icon(status: &str, _pay: &str) -> &'static str {
     }
 }
 
-/// Two-line lesson entry: icon + bold time + name, then indented details.
-pub fn fmt_lesson_line(t: &T, o: &Occ, tz: chrono_tz::Tz, fields: &[String]) -> String {
+/// Shared lesson card: `🕓 <code>HH:MM–HH:MM</code> · <b>Name</b>` plus a
+/// details line (subject · duration · cost · payment), a link row and
+/// notes hidden behind an expandable spoiler. Cancelled lessons are
+/// struck through.
+pub fn lesson_card(t: &T, o: &Occ, tz: chrono_tz::Tz, fields: &[String]) -> String {
     let s = o.start_utc.with_timezone(&tz);
     let e = s + Duration::minutes(o.duration_minutes);
-    let mut line = format!(
-        "{} <b>{}–{}</b> · {}",
-        status_icon(&o.status, &o.payment_status),
+    let has = |f: &str| fields.iter().any(|x| x == f);
+
+    let head = format!(
+        "<code>{}–{}</code> · <b>{}</b>",
         s.format("%H:%M"),
         e.format("%H:%M"),
         esc(&o.name),
     );
-    if o.status == "completed" && o.payment_status == "paid" {
-        line.push_str(&format!(" · {}", t.paid_label()));
-    }
+    let head = if o.status == "cancelled" { format!("<s>{head}</s>") } else { head };
+    let mut card = format!("{} {head}", status_icon(&o.status));
+
     let mut details: Vec<String> = Vec::new();
-    if fields.iter().any(|f| f == "subject") && !o.subject.is_empty() {
+    if has("subject") && !o.subject.is_empty() {
         details.push(esc(&o.subject));
     }
-    if fields.iter().any(|f| f == "duration") {
-        details.push(format!("{} мин", o.duration_minutes));
+    if has("duration") {
+        details.push(t.minutes(o.duration_minutes));
     }
-    if fields.iter().any(|f| f == "cost") && o.cost > 0.0 {
+    if has("cost") && o.cost > 0.0 {
         details.push(format!("{} {}", o.cost, esc(&o.currency)));
     }
-    if fields.iter().any(|f| f == "link") {
-        if let Some(l) = &o.link {
-            details.push(format!("<a href=\"{}\">🔗</a>", esc(l)));
-        }
+    if has("payment") {
+        details.push(format!(
+            "{} {}",
+            if o.payment_status == "paid" { "💰" } else { "💸" },
+            if o.payment_status == "paid" { t.paid_label() } else { t.unpaid_word() },
+        ));
     }
     if !details.is_empty() {
-        line.push_str(&format!("\n    {}", details.join(" · ")));
+        card.push_str(&format!("\n{}", details.join(" · ")));
     }
-    line
+    if has("link") {
+        if let Some(l) = &o.link {
+            card.push_str(&format!("\n<a href=\"{}\">🔗 {}</a>", esc(l), t.link_text()));
+        }
+    }
+    if has("notes") {
+        if let Some(n) = &o.notes {
+            let n = n.trim();
+            if !n.is_empty() {
+                card.push_str(&format!("\n<blockquote expandable>📝 {}</blockquote>", esc(n)));
+            }
+        }
+    }
+    card
 }
 
 fn day_stats(t: &T, occs: &[Occ]) -> String {
@@ -209,7 +228,7 @@ pub fn day_message(t: &T, date: NaiveDate, occs: &[Occ], tz: chrono_tz::Tz, fiel
         day_stats(t, occs),
     );
     for o in occs {
-        s.push_str(&fmt_lesson_line(t, o, tz, fields));
+        s.push_str(&lesson_card(t, o, tz, fields));
         s.push_str("\n\n");
     }
     s.trim_end().to_string()
@@ -240,7 +259,7 @@ pub fn week_message(t: &T, start: NaiveDate, occs: &[Occ], tz: chrono_tz::Tz, fi
         if day.is_empty() { continue; }
         s.push_str(&format!("\n<b>▸ {} {}</b>\n\n", weekday_name(t, d), d.format("%d.%m")));
         for o in day {
-            s.push_str(&fmt_lesson_line(t, o, tz, fields));
+            s.push_str(&lesson_card(t, o, tz, fields));
             s.push_str("\n\n");
         }
     }
@@ -581,19 +600,11 @@ fn apply_action(conn: &Connection, occ_id: &str, action: &str) -> Result<Option<
 }
 
 pub fn reminder_text(t: &T, o: &Occ, tz: chrono_tz::Tz, fields: &[String], minutes_before: i64) -> String {
-    let mut s = format!("<b>🔔 {} — {}</b>\n", t.lesson_soon(), t.remind_in(minutes_before / 60, minutes_before % 60));
-    s.push_str(&fmt_lesson_line(t, o, tz, fields));
-    if fields.iter().any(|f| f == "link") {
-        if let Some(l) = &o.link {
-            s.push_str(&format!("\n🔗 <a href=\"{}\">{}</a>", esc(l), t.link_text()));
-        }
-    }
-    if fields.iter().any(|f| f == "notes") {
-        if let Some(n) = &o.notes {
-            if !n.is_empty() {
-                s.push_str(&format!("\n📝 {}", esc(n)));
-            }
-        }
-    }
+    let mut s = format!(
+        "<b>🔔 {} — {}</b>\n",
+        t.lesson_soon(),
+        t.remind_in(minutes_before / 60, minutes_before % 60),
+    );
+    s.push_str(&lesson_card(t, o, tz, fields));
     s
 }
