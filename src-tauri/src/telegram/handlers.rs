@@ -308,8 +308,10 @@ async fn handle_message(bot: &Bot, m: Message) -> Result<(), String> {
             bot.send(chat_id, &day_message(&t, d, &occs, tz, &fields, t.tomorrow()), None, true).await?;
         }
         "week" => {
-            let occs = occurrences::collect(&conn, tz, today, today + Duration::days(6))?;
-            bot.send(chat_id, &week_message(&t, today, &occs, tz, &fields), None, true).await?;
+            // Same range as the app's week view: Monday–Sunday.
+            let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
+            let occs = occurrences::collect(&conn, tz, monday, monday + Duration::days(6))?;
+            bot.send(chat_id, &week_message(&t, monday, &occs, tz, &fields), None, true).await?;
         }
         "morning" => {
             let occs = day_occurrences(&conn, today)?;
