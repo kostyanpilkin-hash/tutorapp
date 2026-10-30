@@ -502,17 +502,30 @@ pub fn create_lesson(
                 &input.payment_status,
             )?;
             insert_reminders(conn, &id, &input.reminders)?;
-            log_activity(
-                conn,
-                "lesson",
-                "created",
-                Some(&id),
-                Some(&student_name),
-                Some("start_at"),
-                None,
-                Some(&input.start_at),
-                input.recurrence_rule.as_deref(),
-            );
+            if input.recurrence_parent_id.is_some() {
+                // Instance override: status / payment / reschedule of a series slot.
+                if input.status != "scheduled" {
+                    log_activity(conn, "lesson", "status_changed", Some(&id), Some(&student_name), Some("status"), Some("scheduled"), Some(&input.status), input.recurrence_instance_date.as_deref());
+                }
+                if input.payment_status == "paid" || input.payment_status == "prepaid" {
+                    log_activity(conn, "lesson", "payment_changed", Some(&id), Some(&student_name), Some("payment_status"), None, Some(&input.payment_status), input.recurrence_instance_date.as_deref());
+                }
+                if input.status == "scheduled" && input.payment_status != "paid" && input.payment_status != "prepaid" {
+                    log_activity(conn, "lesson", "rescheduled", Some(&id), Some(&student_name), Some("start_at"), input.recurrence_instance_date.as_deref(), Some(&input.start_at), None);
+                }
+            } else {
+                log_activity(
+                    conn,
+                    "lesson",
+                    "created",
+                    Some(&id),
+                    Some(&student_name),
+                    Some("start_at"),
+                    None,
+                    Some(&input.start_at),
+                    input.recurrence_rule.as_deref(),
+                );
+            }
             Ok(())
         })();
         match result {
@@ -576,6 +589,13 @@ pub fn update_lesson(
         let result = (|| -> Result<(), String> {
             let student_name = student_names(conn, &input.students)?;
             let color = resolve_lesson_color(conn, &input.students, &input.color);
+            let old: Option<(String, String, String)> = conn
+                .query_row(
+                    "SELECT status, payment_status, start_at FROM lessons WHERE id = ?1",
+                    params![id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .ok();
             conn.execute(
                 "UPDATE lessons SET student_name=?2, subject=?3, start_at=?4, duration_minutes=?5, cost=?6, currency=?7, link=?8, notes=?9, materials=?10, materials_link=?11, status=?12, payment_status=?13, recurrence_rule=?14, recurrence_parent_id=?15, recurrence_instance_date=?16, color=?17, updated_at=?18 WHERE id=?1",
                 params![
@@ -611,17 +631,24 @@ pub fn update_lesson(
             conn.execute("DELETE FROM reminders WHERE lesson_id = ?1", params![id])
                 .map_err(|e| e.to_string())?;
             insert_reminders(conn, &id, &input.reminders)?;
-            log_activity(
-                conn,
-                "lesson",
-                "updated",
-                Some(&id),
-                Some(&student_name),
-                Some("start_at"),
-                None,
-                Some(&input.start_at),
-                None,
-            );
+            let mut logged = false;
+            if let Some((old_status, old_pay, old_start)) = &old {
+                if *old_status != input.status {
+                    log_activity(conn, "lesson", "status_changed", Some(&id), Some(&student_name), Some("status"), Some(old_status), Some(&input.status), input.recurrence_instance_date.as_deref());
+                    logged = true;
+                }
+                if *old_pay != input.payment_status {
+                    log_activity(conn, "lesson", "payment_changed", Some(&id), Some(&student_name), Some("payment_status"), Some(old_pay), Some(&input.payment_status), input.recurrence_instance_date.as_deref());
+                    logged = true;
+                }
+                if *old_start != input.start_at {
+                    log_activity(conn, "lesson", "rescheduled", Some(&id), Some(&student_name), Some("start_at"), Some(old_start), Some(&input.start_at), None);
+                    logged = true;
+                }
+            }
+            if !logged {
+                log_activity(conn, "lesson", "updated", Some(&id), Some(&student_name), None, None, None, None);
+            }
             Ok(())
         })();
         match result {
