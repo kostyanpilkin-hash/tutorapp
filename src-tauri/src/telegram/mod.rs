@@ -135,7 +135,7 @@ fn rand_code() -> u64 {
 pub async fn tg_disconnect(state: tauri::State<'_, AppState>) -> Result<(), String> {
     RUN.fetch_add(1, Ordering::SeqCst);
     state.pool.with_conn(|conn| {
-        conn.execute("DELETE FROM settings WHERE key IN ('tg_token', 'tg_bot_username', 'tg_pair_code', 'tg_pair_exp')", [])
+        conn.execute("DELETE FROM settings WHERE key IN ('tg_token', 'tg_bot_username', 'tg_pair_code', 'tg_pair_exp', 'tg_last_error')", [])
             .map_err(|e| e.to_string())?;
         conn.execute("DELETE FROM telegram_chats", []).map_err(|e| e.to_string())?;
         Ok(())
@@ -176,6 +176,8 @@ pub async fn start_bot() {
     // The poll loop must run even before the owner links (pairing happens
     // via /start + code), so only the token is required here.
     let Some(token) = setting(&conn, "tg_token") else { return };
+    // Fresh start: drop a stale poll error left by a previous run.
+    let _ = conn.execute("DELETE FROM settings WHERE key = 'tg_last_error'", []);
     let bot = api::Bot::new(&token);
     let t = lang(&conn);
     let _ = bot

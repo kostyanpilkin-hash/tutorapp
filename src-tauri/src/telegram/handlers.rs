@@ -336,10 +336,18 @@ pub async fn poll_loop(bot: Bot, run_id: u64) {
         .ok()
         .and_then(|c| setting(&c, "tg_offset").and_then(|v| v.parse().ok()))
         .unwrap_or(0);
+    let mut had_error = false;
     loop {
         if !is_running(run_id) { return; }
         match bot.get_updates(offset, 25).await {
             Ok(updates) => {
+                // A recovered poll clears the last recorded error.
+                if had_error {
+                    had_error = false;
+                    if let Ok(conn) = open_db() {
+                        let _ = conn.execute("DELETE FROM settings WHERE key = 'tg_last_error'", []);
+                    }
+                }
                 let n = updates.len() as i64;
                 for u in updates {
                     offset = u.update_id + 1;
@@ -356,6 +364,7 @@ pub async fn poll_loop(bot: Bot, run_id: u64) {
             }
             Err(e) => {
                 eprintln!("tg poll error: {e}");
+                had_error = true;
                 if let Ok(conn) = open_db() {
                     let _ = set_setting(&conn, "tg_last_error", &e);
                 }
