@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { format } from "date-fns";
 import type { Lesson, LessonInput, LessonStudentInput, RecurrenceEditScope } from "@/types/lesson";
@@ -36,17 +36,46 @@ import { StudentPickerDialog } from "@/components/students/StudentPickerDialog";
 import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { LinkifiedText } from "@/components/LinkifiedText";
 import type { PaymentStatus } from "@/types/lesson";
-import { Users } from "lucide-react";
+import { Bell, Flag, Link2, Repeat, Users, Wallet, type LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { cn } from "@/lib/utils";
 
 const REMINDER_PRESETS = [
-  { value: "1440", labelKey: "reminder.dayBefore" },
-  { value: "60", labelKey: "reminder.hourBefore" },
-  { value: "30", labelKey: "reminder.min30" },
-  { value: "15", labelKey: "reminder.min15" },
-  { value: "5", labelKey: "reminder.min5" },
-  { value: "0", labelKey: "reminder.atStart" },
+  { value: 1440, labelKey: "reminder.dayBefore" },
+  { value: 120, labelKey: "reminder.hours2" },
+  { value: 60, labelKey: "reminder.hourBefore" },
+  { value: 30, labelKey: "reminder.min30" },
+  { value: 15, labelKey: "reminder.min15" },
+  { value: 5, labelKey: "reminder.min5" },
+  { value: 0, labelKey: "reminder.atStart" },
 ] as const;
+
+const STATUS_OPTIONS = [
+  { value: "scheduled", active: "border-primary bg-primary text-primary-foreground" },
+  { value: "completed", active: "border-green-600 bg-green-600 text-white" },
+  { value: "cancelled", active: "border-border bg-muted text-muted-foreground line-through" },
+  { value: "no_show", active: "border-amber-500 bg-amber-500 text-white" },
+] as const;
+
+function FormSection({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-border bg-muted/20 p-3">
+      <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+        <Icon className="h-4 w-4 text-muted-foreground" />
+        {title}
+      </h3>
+      <div className="grid gap-3">{children}</div>
+    </section>
+  );
+}
 
 interface Props {
   open: boolean;
@@ -91,10 +120,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>("unpaid");
   const [paymentPromptOpen, setPaymentPromptOpen] = useState(false);
   const [pendingScope, setPendingScope] = useState<RecurrenceEditScope | null>(null);
-  const [reminderCount, setReminderCount] = useState<"1" | "2" | "3">("2");
-  const [reminder1, setReminder1] = useState("15");
-  const [reminder2, setReminder2] = useState("0");
-  const [reminder3, setReminder3] = useState("1440");
+  const [reminderMins, setReminderMins] = useState<number[]>([]);
   const [recurrence, setRecurrence] = useState("none");
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [recurrenceEnd, setRecurrenceEnd] = useState<"none" | "until" | "count">("none");
@@ -104,12 +130,38 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
   const [scopeOpen, setScopeOpen] = useState(false);
   const [customGroupCosts, setCustomGroupCosts] = useState(false);
 
-  const reminderValues = useMemo(() => {
-    const values = [Number(reminder1)];
-    if (reminderCount === "2" || reminderCount === "3") values.push(Number(reminder2));
-    if (reminderCount === "3") values.push(Number(reminder3));
-    return [...new Set(values)].sort((a, b) => b - a);
-  }, [reminder1, reminder2, reminder3, reminderCount]);
+  const reminderValues = useMemo(
+    () => [...new Set(reminderMins)].sort((a, b) => b - a),
+    [reminderMins],
+  );
+
+  const reminderOptions = useMemo(() => {
+    const options: { value: number; label: string }[] = REMINDER_PRESETS.map((p) => ({
+      value: p.value,
+      label: t(p.labelKey),
+    }));
+    for (const m of reminderMins) {
+      if (!options.some((o) => o.value === m)) {
+        options.push({ value: m, label: `${m} ${t("today.min")}` });
+      }
+    }
+    return options.sort((a, b) => b.value - a.value);
+  }, [reminderMins, t]);
+
+  const endTimeLabel = useMemo(() => {
+    if (!time || !duration || duration <= 0) return "";
+    const [h, m] = time.split(":").map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return "";
+    const d = new Date();
+    d.setHours(h, m + duration, 0, 0);
+    return format(d, "HH:mm");
+  }, [time, duration]);
+
+  const toggleReminder = (mins: number) => {
+    setReminderMins((prev) =>
+      prev.includes(mins) ? prev.filter((m) => m !== mins) : [...prev, mins],
+    );
+  };
 
   const selectedStudents = useMemo(
     () => allStudents.filter((s) => selectedIds.includes(s.id)),
@@ -198,21 +250,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
         setRecurrenceUntil("");
         setRecurrenceCount("10");
       }
-      if (mins.length <= 1) {
-        setReminderCount("1");
-        setReminder1(String(mins[0] ?? 15));
-      } else if (mins.length === 2) {
-        setReminderCount("2");
-        const sorted = [...mins].sort((a, b) => b - a);
-        setReminder1(String(sorted[0]));
-        setReminder2(String(sorted[1]));
-      } else {
-        setReminderCount("3");
-        const sorted = [...mins].sort((a, b) => b - a);
-        setReminder1(String(sorted[0]));
-        setReminder2(String(sorted[1]));
-        setReminder3(String(sorted[2]));
-      }
+      setReminderMins([...new Set(mins)].sort((a, b) => b - a));
     } else {
       const d = initialDate || new Date();
       const sorted = [...defaultReminders].sort((a, b) => b - a);
@@ -237,19 +275,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       setRecurrenceEnd("none");
       setRecurrenceUntil("");
       setRecurrenceCount("10");
-      if (sorted.length <= 1) {
-        setReminderCount("1");
-        setReminder1(String(sorted[0] ?? 15));
-      } else if (sorted.length === 2) {
-        setReminderCount("2");
-        setReminder1(String(sorted[0] ?? 1440));
-        setReminder2(String(sorted[1] ?? 0));
-      } else {
-        setReminderCount("3");
-        setReminder1(String(sorted[0] ?? 1440));
-        setReminder2(String(sorted[1] ?? 15));
-        setReminder3(String(sorted[2] ?? 0));
-      }
+      setReminderMins([...new Set(sorted)]);
     }
     setOverlapWarning(null);
   }, [open, lesson, initialDate, initialStudentIds, defaultDuration, defaultReminders]);
@@ -535,387 +561,395 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
             <DialogTitle>{lesson ? t("lesson.edit") : t("lesson.new")}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3">
-            <div>
-              <Label>{t("lesson.student")}</Label>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => setPickerOpen(true)}
-              >
-                <Users className="mr-2 h-4 w-4" />
-                {displayStudentName || t("students.pickTitle")}
-              </Button>
-              {selectedStudents.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {selectedStudents.map((s) => (
-                    <div
-                      key={s.id}
-                      className="flex items-center gap-2 rounded-full border border-border bg-muted/40 px-2 py-1"
-                    >
-                      <StudentAvatar
-                        photoPath={s.photoPath}
-                        name={s.name}
-                        color={s.color}
-                        className="h-6 w-6"
-                        textClassName="text-[10px]"
-                      />
-                      <span className="text-sm">{s.name}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {selectedStudents.length > 1 && (
-                <p className="mt-1 text-xs text-muted-foreground">{t("lesson.groupLesson")}</p>
-              )}
-            </div>
-
-            {timezoneHints.length > 0 && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2 text-sm dark:bg-blue-950/20">
-                {timezoneHints.map((h) => (
-                  <p key={h.name}>
-                    {t("lesson.studentTime", { name: h.name, time: h.time, tz: h.tz })}
-                  </p>
-                ))}
-              </div>
-            )}
-
-            <div>
-              <Label>{t("lesson.subject")}</Label>
-              <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+            <FormSection icon={Users} title={t("lesson.sectionWho")}>
               <div>
-                <Label>{t("lesson.date")}</Label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              </div>
-              <div>
-                <Label>{t("lesson.time")}</Label>
-                <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>{t("lesson.duration")}</Label>
-                <Input type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
-              </div>
-              <div>
-                <Label>{t("lesson.recurrence")}</Label>
-                <Select
-                  value={recurrence}
-                  onValueChange={(v) => {
-                    setRecurrence(v);
-                    if (v === "weekly" && weekdays.length === 0 && date) {
-                      setWeekdays([parseLocalDateTime(date, time || "10:00").getDay()]);
-                    }
-                  }}
+                <Label>{t("lesson.student")}</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => setPickerOpen(true)}
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">{t("lesson.noRecurrence")}</SelectItem>
-                    <SelectItem value="weekly">{t("lesson.weekly")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {recurrence === "weekly" && (
-              <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
-                <div>
-                  <Label className="mb-2 block text-xs text-muted-foreground">{t("lesson.weekdays")}</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { d: 1, key: "mon" },
-                      { d: 2, key: "tue" },
-                      { d: 3, key: "wed" },
-                      { d: 4, key: "thu" },
-                      { d: 5, key: "fri" },
-                      { d: 6, key: "sat" },
-                      { d: 0, key: "sun" },
-                    ].map(({ d, key }) => {
-                      const checked = weekdays.includes(d);
-                      return (
-                        <label
-                          key={key}
-                          className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              setWeekdays((prev) =>
-                                checked ? prev.filter((x) => x !== d) : [...prev, d],
-                              );
-                            }}
-                          />
-                          {t(`lesson.weekday.${key}`)}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <Label className="mb-2 block text-xs text-muted-foreground">{t("lesson.recurrenceEnd")}</Label>
-                  <Select
-                    value={recurrenceEnd}
-                    onValueChange={(v) => setRecurrenceEnd(v as "none" | "until" | "count")}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">{t("lesson.recurrenceNoEnd")}</SelectItem>
-                      <SelectItem value="until">{t("lesson.recurrenceUntil")}</SelectItem>
-                      <SelectItem value="count">{t("lesson.recurrenceCount")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {recurrenceEnd === "until" && (
-                  <div>
-                    <Label className="text-xs text-muted-foreground">{t("lesson.untilDate")}</Label>
-                    <Input
-                      type="date"
-                      value={recurrenceUntil}
-                      onChange={(e) => setRecurrenceUntil(e.target.value)}
-                    />
-                  </div>
-                )}
-                {recurrenceEnd === "count" && (
-                  <div>
-                    <Label className="text-xs text-muted-foreground">{t("lesson.countValue")}</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={500}
-                      value={recurrenceCount}
-                      onChange={(e) => setRecurrenceCount(e.target.value)}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>{t("lesson.cost")}</Label>
-                <Input type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
-              </div>
-              <div>
-                <Label>{t("lesson.currency")}</Label>
-                <Select value={currency} onValueChange={setCurrency}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {CURRENCIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {selectedIds.length > 1 && (
-              <div className="rounded-lg border border-border p-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={customGroupCosts}
-                    onChange={(e) => setCustomGroupCosts(e.target.checked)}
-                  />
-                  {t("lesson.individualCosts")}
-                </label>
-                {customGroupCosts && (
-                  <div className="mt-2 space-y-2">
+                  <Users className="mr-2 h-4 w-4" />
+                  {displayStudentName || t("students.pickTitle")}
+                </Button>
+                {selectedStudents.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {selectedStudents.map((s) => (
-                      <div key={s.id} className="grid grid-cols-3 gap-2 items-center">
-                        <span className="text-sm truncate">{s.name}</span>
-                        <Input
-                          type="number"
-                          placeholder={cost || t("lesson.cost")}
-                          value={studentCosts[s.id]?.cost ?? ""}
-                          onChange={(e) =>
-                            setStudentCosts((prev) => ({
-                              ...prev,
-                              [s.id]: { cost: e.target.value, currency: prev[s.id]?.currency || currency },
-                            }))
-                          }
+                      <div
+                        key={s.id}
+                        className="flex items-center gap-2 rounded-full border border-border bg-muted/40 px-2 py-1"
+                      >
+                        <StudentAvatar
+                          photoPath={s.photoPath}
+                          name={s.name}
+                          color={s.color}
+                          className="h-6 w-6"
+                          textClassName="text-[10px]"
                         />
-                        <Select
-                          value={studentCosts[s.id]?.currency || currency}
-                          onValueChange={(v) =>
-                            setStudentCosts((prev) => ({
-                              ...prev,
-                              [s.id]: { cost: prev[s.id]?.cost ?? "", currency: v },
-                            }))
-                          }
-                        >
-                          <SelectTrigger><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {CURRENCIES.map((c) => (
-                              <SelectItem key={c} value={c}>{c}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <span className="text-sm">{s.name}</span>
                       </div>
                     ))}
                   </div>
                 )}
-              </div>
-            )}
-
-            <div>
-              <Label>{t("lesson.link")}</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={link}
-                  onChange={(e) => setLink(e.target.value)}
-                  placeholder="https://meet.google.com/..."
-                />
-                {link.trim() && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void openUrl(hrefFor(link.trim()))}
-                  >
-                    {t("lesson.openLink")}
-                  </Button>
+                {selectedStudents.length > 1 && (
+                  <p className="mt-1 text-xs text-muted-foreground">{t("lesson.groupLesson")}</p>
                 )}
               </div>
-            </div>
-            {selectedStudents.length > 0 && (
-              <div className="grid gap-3">
-                {selectedStudents.map((s) => {
-                  const value = lessonNotesDraft[s.id] ?? s.notes ?? "";
-                  return (
-                    <div key={s.id}>
-                      <Label>
-                        {selectedStudents.length > 1
-                          ? `${t("students.notes")} — ${s.name}`
-                          : t("students.notes")}
-                      </Label>
-                      <p className="mb-1 text-xs text-muted-foreground">{t("students.lessonNoteHint")}</p>
-                      <Textarea
-                        value={value}
-                        onChange={(e) =>
-                          setLessonNotesDraft((prev) => ({ ...prev, [s.id]: e.target.value }))
-                        }
-                      />
-                      {textHasLinks(value) && (
-                        <LinkifiedText className="mt-1.5 text-sm" text={value} />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div>
-              <Label>{t("lesson.materials")}</Label>
-              <Textarea value={materials} onChange={(e) => setMaterials(e.target.value)} />
-              {textHasLinks(materials) && (
-                <LinkifiedText className="mt-1.5 text-sm" text={materials} />
-              )}
-            </div>
-            <div>
-              <Label>{t("lesson.materialsLink")}</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={materialsLink}
-                  onChange={(e) => setMaterialsLink(e.target.value)}
-                  placeholder="https://..."
-                />
-                {materialsLink.trim() && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void openUrl(hrefFor(materialsLink.trim()))}
-                  >
-                    {t("lesson.openLink")}
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div>
-              <Label>{t("lesson.notes")}</Label>
-              <p className="mb-1 text-xs text-muted-foreground">{t("lesson.notesHint")}</p>
-              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-              {textHasLinks(notes) && (
-                <LinkifiedText className="mt-1.5 text-sm" text={notes} />
-              )}
-            </div>
 
-            <div className="rounded-lg border border-border bg-muted/30 p-3">
-              <Label className="mb-2 block">{t("lesson.reminders")}</Label>
-              <div className="mb-3">
-                <Label className="text-xs text-muted-foreground">{t("lesson.reminderCount")}</Label>
-                <Select value={reminderCount} onValueChange={(v) => setReminderCount(v as "1" | "2" | "3")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">{t("lesson.oneReminder")}</SelectItem>
-                    <SelectItem value="2">{t("lesson.twoReminders")}</SelectItem>
-                    <SelectItem value="3">{t("lesson.threeReminders")}</SelectItem>
-                  </SelectContent>
-                </Select>
+              {timezoneHints.length > 0 && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2 text-sm dark:bg-blue-950/20">
+                  {timezoneHints.map((h) => (
+                    <p key={h.name}>
+                      {t("lesson.studentTime", { name: h.name, time: h.time, tz: h.tz })}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              <div>
+                <Label>{t("lesson.subject")}</Label>
+                <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
               </div>
-              <div className="grid gap-2">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <Label className="text-xs text-muted-foreground">
-                    {reminderCount === "1" ? t("lesson.reminderWhen") : t("lesson.reminderFirst")}
-                  </Label>
-                  <Select value={reminder1} onValueChange={setReminder1}>
+                  <Label>{t("lesson.date")}</Label>
+                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                </div>
+                <div>
+                  <Label>{t("lesson.time")}</Label>
+                  <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                </div>
+                <div>
+                  <Label>{t("lesson.duration")}</Label>
+                  <Input type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+                  {endTimeLabel && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {time} → {endTimeLabel}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection icon={Repeat} title={t("lesson.recurrence")}>
+              <Select
+                value={recurrence}
+                onValueChange={(v) => {
+                  setRecurrence(v);
+                  if (v === "weekly" && weekdays.length === 0 && date) {
+                    setWeekdays([parseLocalDateTime(date, time || "10:00").getDay()]);
+                  }
+                }}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t("lesson.noRecurrence")}</SelectItem>
+                  <SelectItem value="weekly">{t("lesson.weekly")}</SelectItem>
+                </SelectContent>
+              </Select>
+              {recurrence === "weekly" && (
+                <div className="space-y-3">
+                  <div>
+                    <Label className="mb-2 block text-xs text-muted-foreground">{t("lesson.weekdays")}</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { d: 1, key: "mon" },
+                        { d: 2, key: "tue" },
+                        { d: 3, key: "wed" },
+                        { d: 4, key: "thu" },
+                        { d: 5, key: "fri" },
+                        { d: 6, key: "sat" },
+                        { d: 0, key: "sun" },
+                      ].map(({ d, key }) => {
+                        const active = weekdays.includes(d);
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            className={cn(
+                              "h-8 w-8 rounded-full border text-xs font-medium transition-colors",
+                              active
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-border bg-card text-muted-foreground hover:bg-muted",
+                            )}
+                            onClick={() =>
+                              setWeekdays((prev) =>
+                                active ? prev.filter((x) => x !== d) : [...prev, d],
+                              )
+                            }
+                          >
+                            {t(`lesson.weekday.${key}`)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="mb-2 block text-xs text-muted-foreground">{t("lesson.recurrenceEnd")}</Label>
+                    <Select
+                      value={recurrenceEnd}
+                      onValueChange={(v) => setRecurrenceEnd(v as "none" | "until" | "count")}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">{t("lesson.recurrenceNoEnd")}</SelectItem>
+                        <SelectItem value="until">{t("lesson.recurrenceUntil")}</SelectItem>
+                        <SelectItem value="count">{t("lesson.recurrenceCount")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {recurrenceEnd === "until" && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">{t("lesson.untilDate")}</Label>
+                      <Input
+                        type="date"
+                        value={recurrenceUntil}
+                        onChange={(e) => setRecurrenceUntil(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  {recurrenceEnd === "count" && (
+                    <div>
+                      <Label className="text-xs text-muted-foreground">{t("lesson.countValue")}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={500}
+                        value={recurrenceCount}
+                        onChange={(e) => setRecurrenceCount(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </FormSection>
+
+            <FormSection icon={Wallet} title={t("finance.payment")}>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>{t("lesson.cost")}</Label>
+                  <Input type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
+                </div>
+                <div>
+                  <Label>{t("lesson.currency")}</Label>
+                  <Select value={currency} onValueChange={setCurrency}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {REMINDER_PRESETS.map((p) => (
-                        <SelectItem key={p.value} value={p.value}>{t(p.labelKey)}</SelectItem>
+                      {CURRENCIES.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {(reminderCount === "2" || reminderCount === "3") && (
-                  <div>
-                    <Label className="text-xs text-muted-foreground">{t("lesson.reminderSecond")}</Label>
-                    <Select value={reminder2} onValueChange={setReminder2}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {REMINDER_PRESETS.map((p) => (
-                          <SelectItem key={p.value} value={p.value}>{t(p.labelKey)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {reminderCount === "3" && (
-                  <div>
-                    <Label className="text-xs text-muted-foreground">{t("lesson.reminderThird")}</Label>
-                    <Select value={reminder3} onValueChange={setReminder3}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {REMINDER_PRESETS.map((p) => (
-                          <SelectItem key={p.value} value={p.value}>{t(p.labelKey)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              </div>
+
+              {selectedIds.length > 1 && (
+                <div className="rounded-lg border border-border p-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={customGroupCosts}
+                      onChange={(e) => setCustomGroupCosts(e.target.checked)}
+                    />
+                    {t("lesson.individualCosts")}
+                  </label>
+                  {customGroupCosts && (
+                    <div className="mt-2 space-y-2">
+                      {selectedStudents.map((s) => (
+                        <div key={s.id} className="grid grid-cols-3 gap-2 items-center">
+                          <span className="text-sm truncate">{s.name}</span>
+                          <Input
+                            type="number"
+                            placeholder={cost || t("lesson.cost")}
+                            value={studentCosts[s.id]?.cost ?? ""}
+                            onChange={(e) =>
+                              setStudentCosts((prev) => ({
+                                ...prev,
+                                [s.id]: { cost: e.target.value, currency: prev[s.id]?.currency || currency },
+                              }))
+                            }
+                          />
+                          <Select
+                            value={studentCosts[s.id]?.currency || currency}
+                            onValueChange={(v) =>
+                              setStudentCosts((prev) => ({
+                                ...prev,
+                                [s.id]: { cost: prev[s.id]?.cost ?? "", currency: v },
+                              }))
+                            }
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {CURRENCIES.map((c) => (
+                                <SelectItem key={c} value={c}>{c}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </FormSection>
+
+            <FormSection icon={Link2} title={t("lesson.sectionLinks")}>
+              <div>
+                <Label>{t("lesson.link")}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={link}
+                    onChange={(e) => setLink(e.target.value)}
+                    placeholder="https://meet.google.com/..."
+                  />
+                  {link.trim() && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void openUrl(hrefFor(link.trim()))}
+                    >
+                      {t("lesson.openLink")}
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <Label>{t("lesson.materialsLink")}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={materialsLink}
+                    onChange={(e) => setMaterialsLink(e.target.value)}
+                    placeholder="https://..."
+                  />
+                  {materialsLink.trim() && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void openUrl(hrefFor(materialsLink.trim()))}
+                    >
+                      {t("lesson.openLink")}
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <Label>{t("lesson.notes")}</Label>
+                <p className="mb-1 text-xs text-muted-foreground">{t("lesson.notesHint")}</p>
+                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+                {textHasLinks(notes) && (
+                  <LinkifiedText className="mt-1.5 text-sm" text={notes} />
                 )}
               </div>
-            </div>
+              {selectedStudents.length > 0 && (
+                <div className="grid gap-3">
+                  {selectedStudents.map((s) => {
+                    const value = lessonNotesDraft[s.id] ?? s.notes ?? "";
+                    return (
+                      <div key={s.id}>
+                        <Label>
+                          {selectedStudents.length > 1
+                            ? `${t("students.notes")} — ${s.name}`
+                            : t("students.notes")}
+                        </Label>
+                        <p className="mb-1 text-xs text-muted-foreground">{t("students.lessonNoteHint")}</p>
+                        <Textarea
+                          value={value}
+                          onChange={(e) =>
+                            setLessonNotesDraft((prev) => ({ ...prev, [s.id]: e.target.value }))
+                          }
+                        />
+                        {textHasLinks(value) && (
+                          <LinkifiedText className="mt-1.5 text-sm" text={value} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div>
+                <Label>{t("lesson.materials")}</Label>
+                <Textarea value={materials} onChange={(e) => setMaterials(e.target.value)} />
+                {textHasLinks(materials) && (
+                  <LinkifiedText className="mt-1.5 text-sm" text={materials} />
+                )}
+              </div>
+            </FormSection>
 
-            <div>
-              <Label>{t("finance.payment")}</Label>
-              <Select value={paymentStatus} onValueChange={(v) => setPaymentStatus(v as PaymentStatus)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unpaid">{t("finance.unpaid")}</SelectItem>
-                  <SelectItem value="paid">{t("finance.paid")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <FormSection icon={Bell} title={t("lesson.reminders")}>
+              <div className="flex flex-wrap gap-1.5">
+                {reminderOptions.map((o) => {
+                  const active = reminderMins.includes(o.value);
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-card text-muted-foreground hover:bg-muted",
+                      )}
+                      onClick={() => toggleReminder(o.value)}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </FormSection>
 
-            <div>
-              <Label>{t("lesson.status")}</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(["scheduled", "completed", "cancelled", "no_show"] as const).map((s) => (
-                    <SelectItem key={s} value={s}>{t(`status.${s}`)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <FormSection icon={Flag} title={t("lesson.sectionStatus")}>
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{t("lesson.status")}</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {STATUS_OPTIONS.map((opt) => {
+                    const active = status === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        title={t(`status.${opt.value}`)}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          active
+                            ? opt.active
+                            : "border-border bg-card text-muted-foreground hover:bg-muted",
+                        )}
+                        onClick={() => setStatus(opt.value)}
+                      >
+                        {t(`lesson.statusChip.${opt.value}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{t("finance.payment")}</Label>
+                <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+                  {(["unpaid", "paid"] as const).map((v) => {
+                    const active = paymentStatus === v;
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        className={cn(
+                          "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                          active
+                            ? v === "paid"
+                              ? "bg-green-600 text-white"
+                              : "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => setPaymentStatus(v)}
+                      >
+                        {t(v === "paid" ? "finance.paid" : "finance.unpaid")}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </FormSection>
             {overlapWarning && (
               <div className="space-y-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800">
                 <p>{overlapWarning}</p>
