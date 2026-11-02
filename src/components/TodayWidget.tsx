@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { format, isSameDay, startOfDay } from "date-fns";
 import { ru, enUS, be as beLocale } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
@@ -80,6 +80,43 @@ function SummaryChip({
   );
 }
 
+function CollapsibleNote({
+  prefix,
+  text,
+  expanded,
+  onToggle,
+  className,
+  textClassName,
+}: {
+  prefix?: ReactNode;
+  text: string;
+  expanded: boolean;
+  onToggle: () => void;
+  className?: string;
+  textClassName?: string;
+}) {
+  const { t } = useTranslation();
+  const collapsible = text.length > 120 || text.split("\n").length > 2;
+  return (
+    <div className={className}>
+      {prefix}
+      <LinkifiedText
+        className={collapsible && !expanded ? "line-clamp-2" : textClassName}
+        text={text}
+      />
+      {collapsible && (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="ml-1 text-xs text-primary hover:underline"
+        >
+          {expanded ? t("today.collapse") : t("today.more")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function TodayWidget({
   lessons,
   loading,
@@ -93,6 +130,16 @@ export function TodayWidget({
   const locale = locales[i18n.language as keyof typeof locales] || ru;
   const { show } = useLessonContextMenu({ onOpen: onSelect });
   const [now, setNow] = useState(() => new Date());
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+
+  const toggleNote = (id: string) => {
+    setExpandedNotes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 30_000);
@@ -236,18 +283,33 @@ export function TodayWidget({
                       {lesson.subject ? ` · ${lesson.subject}` : ""}
                     </div>
                   </button>
-                    {lessonStudentNotes(lesson).map((item) => (
-                      <div key={`${lesson.id}-${item.name}`} className="mt-2 text-sm">
-                        {lesson.students.length > 1 && (
-                          <span className="mr-1 text-xs font-medium text-muted-foreground">
-                            {item.name}:
-                          </span>
-                        )}
-                        <LinkifiedText className="inline" text={item.note} />
-                      </div>
-                    ))}
+                    {lessonStudentNotes(lesson).map((item) => {
+                      const noteId = `${lesson.id}:${item.name}`;
+                      return (
+                        <CollapsibleNote
+                          key={noteId}
+                          text={item.note}
+                          expanded={expandedNotes.has(noteId)}
+                          onToggle={() => toggleNote(noteId)}
+                          className="mt-2 text-sm"
+                          textClassName="inline"
+                          prefix={
+                            lesson.students.length > 1 ? (
+                              <span className="mr-1 text-xs font-medium text-muted-foreground">
+                                {item.name}:
+                              </span>
+                            ) : undefined
+                          }
+                        />
+                      );
+                    })}
                     {lesson.notes.trim() && (
-                      <LinkifiedText className="mt-1 text-sm text-muted-foreground" text={lesson.notes} />
+                      <CollapsibleNote
+                        text={lesson.notes}
+                        expanded={expandedNotes.has(`${lesson.id}:notes`)}
+                        onToggle={() => toggleNote(`${lesson.id}:notes`)}
+                        className="mt-1 text-sm text-muted-foreground"
+                      />
                     )}
                   </div>
 

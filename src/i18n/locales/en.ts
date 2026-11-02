@@ -81,6 +81,8 @@ const en = {
     markedPaid: "Marked as paid",
     markedUnpaid: "Marked as unpaid",
     linkCopied: "Link copied",
+    more: "…more",
+    collapse: "Collapse",
     reminderToast: "Lesson reminder",
   },
   lesson: {

@@ -81,6 +81,8 @@ const be = {
     markedPaid: "Аплата адзначана",
     markedUnpaid: "Аплата знята",
     linkCopied: "Спасылка скапіявана",
+    more: "…яшчэ",
+    collapse: "Згарнуць",
     reminderToast: "Напамінанне пра занятак",
   },
   lesson: {

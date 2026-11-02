@@ -81,6 +81,8 @@ const ru = {
     markedPaid: "Оплата отмечена",
     markedUnpaid: "Оплата снята",
     linkCopied: "Ссылка скопирована",
+    more: "…ещё",
+    collapse: "Свернуть",
     reminderToast: "Напоминание о занятии",
   },
   lesson: {
