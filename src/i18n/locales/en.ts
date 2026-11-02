@@ -165,6 +165,8 @@ const en = {
   common: {
     undo: "Undo",
     cancel: "Cancel",
+    copy: "Copy",
+    copied: "Copied",
   },
   status: { scheduled: "Scheduled", completed: "Completed", cancelled: "Did not take place", no_show: "Student did not attend" },
   payment: { paid: "Paid", unpaid: "Unpaid" },
@@ -526,6 +528,10 @@ const en = {
     messageHint: "The template text will be copied to the clipboard, then the messenger will open.",
     sendToMessenger: "Open messenger",
     templateCopied: "Message text copied",
+    contacts: "Contacts",
+    nextLessonAt: "Next lesson: {{time}}",
+    prepaidBadge: "Prepaid: {{count}}",
+    call: "Call",
   },
 };
 

@@ -1,8 +1,32 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { format, parseISO, addMonths, subYears, startOfDay, endOfDay } from "date-fns";
 import { ru, enUS, be as beLocale } from "date-fns/locale";
-import { Archive, ArchiveRestore, CheckCircle2, Plus, Search, User, Wallet } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Cake,
+  CheckCircle2,
+  Coins,
+  Contact,
+  Copy,
+  ExternalLink,
+  Globe,
+  History,
+  Mail,
+  MessageCircle,
+  NotebookText,
+  Pencil,
+  Phone,
+  PhoneCall,
+  Plus,
+  Search,
+  TrendingUp,
+  User,
+  Users,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Lesson } from "@/types/lesson";
 import type { Student } from "@/types/student";
@@ -47,11 +71,13 @@ function AmountBlock({
   items,
   className,
   locale,
+  icon: Icon,
 }: {
   title: string;
   items: { currency: string; amount: number }[];
   className?: string;
   locale: string;
+  icon?: LucideIcon;
 }) {
   const sorted = sortCurrencies(items.map((i) => i.currency))
     .map((currency) => items.find((i) => i.currency === currency)!)
@@ -59,7 +85,10 @@ function AmountBlock({
 
   return (
     <div className={cn("rounded-lg border p-3", className)}>
-      <p className="mb-1 text-xs text-muted-foreground">{title}</p>
+      <p className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+        {Icon && <Icon className="h-3.5 w-3.5" />}
+        {title}
+      </p>
       {sorted.length === 0 ? (
         <p className="font-semibold">—</p>
       ) : (
@@ -72,6 +101,36 @@ function AmountBlock({
     </div>
   );
 }
+
+function ContactRow({
+  icon: Icon,
+  label,
+  value,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-2">
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="truncate text-sm font-medium">{value}</p>
+      </div>
+      {children && <div className="flex shrink-0 gap-1">{children}</div>}
+    </div>
+  );
+}
+
+const STATUS_DOT: Record<string, string> = {
+  completed: "bg-green-500",
+  no_show: "bg-amber-500",
+  cancelled: "bg-muted-foreground/50",
+  scheduled: "bg-blue-500",
+};
 
 export function StudentsPanel({ onOpenLesson, onCreateLesson, focusStudent }: Props) {
   const { t, i18n } = useTranslation();
@@ -217,6 +276,19 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, focusStudent }: Pr
 
   const nextLesson = upcomingLessons[0] ?? null;
 
+  const debtBadge = useMemo(() => {
+    const localeTag = numberLocaleFromLang(i18n.language);
+    return (finance?.debt ?? [])
+      .filter((i) => i.amount > 0)
+      .map((i) => formatMoney(i.amount, i.currency, localeTag))
+      .join(" · ");
+  }, [finance, i18n.language]);
+
+  const copyText = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    toast.success(t("common.copied"));
+  };
+
   const openCreate = () => {
     setEditStudent(null);
     setFormOpen(true);
@@ -359,49 +431,221 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, focusStudent }: Pr
                   className="h-16 w-16"
                   textClassName="text-xl"
                 />
-                <div>
-                  <h3 className="text-2xl font-bold">{selected.name}</h3>
-                  {selected.archived && (
-                    <span className="text-sm text-muted-foreground">{t("students.archived")}</span>
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-2xl font-bold">{selected.name}</h3>
+                    {selected.archived && (
+                      <span className="text-sm text-muted-foreground">{t("students.archived")}</span>
+                    )}
+                  </div>
+                  {nextLesson && (
+                    <p className="text-sm text-muted-foreground">
+                      {t("students.nextLessonAt", {
+                        time: format(parseISO(nextLesson.startAt), "EEE d MMM, HH:mm", { locale }),
+                      })}
+                    </p>
                   )}
+                  <div className="flex flex-wrap gap-1.5">
+                    {debtBadge && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        {t("finance.debt")}: {debtBadge}
+                      </span>
+                    )}
+                    {selected.paidLessons != null && selected.paidLessons > 0 && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/15 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                        {t("students.prepaidBadge", { count: selected.paidLessons })}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex items-center gap-1.5">
                 <Button size="sm" onClick={() => onCreateLesson?.(selected.id)}>
+                  <Plus className="mr-1 h-4 w-4" />
                   {t("students.newLesson")}
                 </Button>
-                <Button size="sm" variant="outline" onClick={openEdit}>{t("students.edit")}</Button>
                 {(selected.messenger || selected.phone) && (
-                  <Button size="sm" variant="outline" onClick={openMessageDialog}>
-                    {t("students.openMessenger")}
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-8 w-8"
+                    title={t("students.openMessenger")}
+                    onClick={openMessageDialog}
+                  >
+                    <MessageCircle className="h-4 w-4" />
                   </Button>
                 )}
-                <Button size="sm" variant="outline" onClick={() => void toggleArchive()}>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8"
+                  title={t("students.edit")}
+                  onClick={openEdit}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="h-8 w-8"
+                  title={selected.archived ? t("students.restore") : t("students.archive")}
+                  onClick={() => void toggleArchive()}
+                >
                   {selected.archived ? (
-                    <><ArchiveRestore className="mr-1 h-4 w-4" />{t("students.restore")}</>
+                    <ArchiveRestore className="h-4 w-4" />
                   ) : (
-                    <><Archive className="mr-1 h-4 w-4" />{t("students.archive")}</>
+                    <Archive className="h-4 w-4" />
                   )}
                 </Button>
               </div>
             </div>
 
-            <div className="grid gap-2 text-sm md:grid-cols-2">
-              {selected.phone && <p><span className="text-muted-foreground">{t("students.phone")}:</span> {selected.phone}</p>}
-              {selected.email && <p><span className="text-muted-foreground">{t("students.email")}:</span> {selected.email}</p>}
-              {selected.messenger && <p><span className="text-muted-foreground">{t("students.messenger")}:</span> {selected.messenger}</p>}
-              {selected.parentName && <p><span className="text-muted-foreground">{t("students.parentName")}:</span> {selected.parentName}</p>}
-              {selected.parentPhone && <p><span className="text-muted-foreground">{t("students.parentPhone")}:</span> {selected.parentPhone}</p>}
-              {selected.parentMessenger && <p><span className="text-muted-foreground">{t("students.parentMessenger")}:</span> {selected.parentMessenger}</p>}
-              {!selected.parentName && !selected.parentPhone && !selected.parentMessenger && selected.parents && (
-                <p><span className="text-muted-foreground">{t("students.parents")}:</span> {selected.parents}</p>
-              )}
-              {selected.birthDate && <p><span className="text-muted-foreground">{t("students.birthDate")}:</span> {selected.birthDate}</p>}
-              {selected.timezone && <p><span className="text-muted-foreground">{t("students.timezone")}:</span> {selected.timezone}</p>}
-            </div>
+            {(selected.phone || selected.email || selected.messenger || selected.parentName ||
+              selected.parentPhone || selected.parentMessenger || selected.parents ||
+              selected.birthDate || selected.timezone) && (
+              <div>
+                <h4 className="mb-2 flex items-center gap-1.5 font-medium">
+                  <Contact className="h-4 w-4 text-muted-foreground" />
+                  {t("students.contacts")}
+                </h4>
+                <div className="grid gap-2 md:grid-cols-2">
+                  {selected.phone && (
+                    <ContactRow icon={Phone} label={t("students.phone")} value={selected.phone}>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={t("students.call")}
+                        onClick={() => void openUrl(`tel:${selected.phone!.replace(/[^+\d]/g, "")}`)}
+                      >
+                        <PhoneCall className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={t("common.copy")}
+                        onClick={() => void copyText(selected.phone!)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </ContactRow>
+                  )}
+                  {selected.messenger && (
+                    <ContactRow icon={MessageCircle} label={t("students.messenger")} value={selected.messenger}>
+                      {messengerUrl(selected.messenger) && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          title={t("lesson.openLink")}
+                          onClick={() => void openUrl(messengerUrl(selected.messenger)!)}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={t("common.copy")}
+                        onClick={() => void copyText(selected.messenger!)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </ContactRow>
+                  )}
+                  {selected.email && (
+                    <ContactRow icon={Mail} label={t("students.email")} value={selected.email}>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={t("lesson.openLink")}
+                        onClick={() => void openUrl(`mailto:${selected.email}`)}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={t("common.copy")}
+                        onClick={() => void copyText(selected.email!)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </ContactRow>
+                  )}
+                  {selected.parentName && (
+                    <ContactRow icon={Users} label={t("students.parentName")} value={selected.parentName} />
+                  )}
+                  {!selected.parentName && !selected.parentPhone && !selected.parentMessenger && selected.parents && (
+                    <ContactRow icon={Users} label={t("students.parents")} value={selected.parents} />
+                  )}
+                  {selected.parentPhone && (
+                    <ContactRow icon={Phone} label={t("students.parentPhone")} value={selected.parentPhone}>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={t("students.call")}
+                        onClick={() => void openUrl(`tel:${selected.parentPhone!.replace(/[^+\d]/g, "")}`)}
+                      >
+                        <PhoneCall className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={t("common.copy")}
+                        onClick={() => void copyText(selected.parentPhone!)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </ContactRow>
+                  )}
+                  {selected.parentMessenger && (
+                    <ContactRow icon={MessageCircle} label={t("students.parentMessenger")} value={selected.parentMessenger}>
+                      {messengerUrl(selected.parentMessenger) && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          title={t("lesson.openLink")}
+                          onClick={() => void openUrl(messengerUrl(selected.parentMessenger)!)}
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title={t("common.copy")}
+                        onClick={() => void copyText(selected.parentMessenger!)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </ContactRow>
+                  )}
+                  {selected.birthDate && (
+                    <ContactRow icon={Cake} label={t("students.birthDate")} value={selected.birthDate} />
+                  )}
+                  {selected.timezone && (
+                    <ContactRow icon={Globe} label={t("students.timezone")} value={selected.timezone} />
+                  )}
+                </div>
+              </div>
+            )}
             {selected.notes && (
               <div className="rounded-lg bg-muted/40 p-3 text-sm">
-                <p className="mb-1 font-medium text-muted-foreground">{t("students.notes")}</p>
+                <p className="mb-1 flex items-center gap-1.5 font-medium text-muted-foreground">
+                  <NotebookText className="h-4 w-4" />
+                  {t("students.notes")}
+                </p>
                 <LinkifiedText text={selected.notes} />
               </div>
             )}
@@ -409,7 +653,10 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, focusStudent }: Pr
             {finance && (
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <h4 className="font-medium">{t("students.finance")}</h4>
+                  <h4 className="flex items-center gap-1.5 font-medium">
+                    <Coins className="h-4 w-4 text-muted-foreground" />
+                    {t("students.finance")}
+                  </h4>
                   {selected.paidLessons && selected.paidLessons > 0 && (
                     <Button
                       size="sm"
@@ -430,9 +677,9 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, focusStudent }: Pr
                   )}
                 </div>
                 <div className="grid gap-2 md:grid-cols-3">
-                  <AmountBlock title={t("finance.earned")} items={finance.earned} className="border-green-200" locale={numberLocaleFromLang(i18n.language)} />
-                  <AmountBlock title={t("finance.debt")} items={finance.debt} className="border-amber-200" locale={numberLocaleFromLang(i18n.language)} />
-                  <AmountBlock title={t("finance.expected")} items={finance.expected} className="border-blue-200" locale={numberLocaleFromLang(i18n.language)} />
+                  <AmountBlock title={t("finance.earned")} items={finance.earned} icon={TrendingUp} className="border-green-500/30 bg-green-500/10" locale={numberLocaleFromLang(i18n.language)} />
+                  <AmountBlock title={t("finance.debt")} items={finance.debt} icon={Wallet} className="border-amber-500/30 bg-amber-500/10" locale={numberLocaleFromLang(i18n.language)} />
+                  <AmountBlock title={t("finance.expected")} items={finance.expected} icon={Coins} className="border-blue-500/30 bg-blue-500/10" locale={numberLocaleFromLang(i18n.language)} />
                 </div>
                 {selected.paidLessons && selected.paidLessons > 0 && (
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -444,7 +691,10 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, focusStudent }: Pr
 
             <div>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h4 className="font-medium">{t("students.lessonHistory")}</h4>
+                <h4 className="flex items-center gap-1.5 font-medium">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  {t("students.lessonHistory")}
+                </h4>
                 <div className="flex gap-1 rounded-lg border border-border bg-card p-0.5">
                   <Button
                     size="sm"
@@ -493,43 +743,64 @@ export function StudentsPanel({ onOpenLesson, onCreateLesson, focusStudent }: Pr
                 </p>
               ) : (
                 <div className="space-y-1">
-                  {historyLessons.slice(0, historyLimit).map((l) => {
+                  {historyLessons.slice(0, historyLimit).map((l, idx, arr) => {
                     const paid = lessonPaymentStatus(l) === "paid";
+                    const monthKey = format(parseISO(l.startAt), "yyyy-MM");
+                    const prevMonthKey =
+                      idx > 0 ? format(parseISO(arr[idx - 1].startAt), "yyyy-MM") : null;
                     return (
-                      <div
-                        key={l.id}
-                        className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted/50"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => onOpenLesson?.(l)}
-                          className="min-w-0 flex-1 text-left"
+                      <div key={l.id} className="space-y-1">
+                        {monthKey !== prevMonthKey && (
+                          <p className="px-1 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:pt-0">
+                            {format(parseISO(l.startAt), "LLLL yyyy", { locale })}
+                          </p>
+                        )}
+                        <div
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-muted/50",
+                            nextLesson?.id === l.id && "border-primary/30 bg-primary/5",
+                          )}
                         >
-                          <span className="font-medium">{format(parseISO(l.startAt), "d MMM yyyy, HH:mm", { locale })}</span>
-                          {l.subject && <span className="ml-2 text-muted-foreground">— {l.subject}</span>}
-                          <span className="ml-2 text-muted-foreground">{t(`status.${l.status}`)}</span>
-                        </button>
-                        <div className="flex shrink-0 gap-1">
-                          {l.status !== "completed" && (
+                          <span
+                            className={cn(
+                              "h-2 w-2 shrink-0 rounded-full",
+                              STATUS_DOT[l.status] ?? "bg-muted-foreground/50",
+                            )}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => onOpenLesson?.(l)}
+                            className={cn(
+                              "min-w-0 flex-1 text-left",
+                              l.status === "cancelled" && "text-muted-foreground line-through",
+                            )}
+                          >
+                            <span className="font-medium">{format(parseISO(l.startAt), "d MMM yyyy, HH:mm", { locale })}</span>
+                            {l.subject && <span className="ml-2 text-muted-foreground">— {l.subject}</span>}
+                            <span className="ml-2 text-muted-foreground">{t(`status.${l.status}`)}</span>
+                          </button>
+                          <div className="flex shrink-0 gap-1">
+                            {l.status !== "completed" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0"
+                                title={t("status.completed")}
+                                onClick={(e) => void quickComplete(l, e)}
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="ghost"
                               className="h-7 w-7 p-0"
-                              title={t("status.completed")}
-                              onClick={(e) => void quickComplete(l, e)}
+                              title={paid ? t("payment.unpaid") : t("payment.paid")}
+                              onClick={(e) => void quickPaid(l, e)}
                             >
-                              <CheckCircle2 className="h-4 w-4" />
+                              <Wallet className={cn("h-4 w-4", paid && "text-green-600")} />
                             </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            title={paid ? t("payment.unpaid") : t("payment.paid")}
-                            onClick={(e) => void quickPaid(l, e)}
-                          >
-                            <Wallet className={cn("h-4 w-4", paid && "text-green-600")} />
-                          </Button>
+                          </div>
                         </div>
                       </div>
                     );

@@ -165,6 +165,8 @@ const be = {
   common: {
     undo: "Адмяніць",
     cancel: "Адмена",
+    copy: "Капіяваць",
+    copied: "Скапіявана",
   },
   status: { scheduled: "Запланавана", completed: "Праведзена", cancelled: "Не адбылося", no_show: "Вучань не прыйшоў" },
   payment: { paid: "Аплачана", unpaid: "Не аплачана" },
@@ -526,6 +528,10 @@ const be = {
     messageHint: "Тэкст шаблону будзе скапіяваны ў буфер, пасля чаго адкрыецца месенджар.",
     sendToMessenger: "Адкрыць месенджар",
     templateCopied: "Тэкст паведамлення скапіяваны",
+    contacts: "Кантакты",
+    nextLessonAt: "Наст. занятак: {{time}}",
+    prepaidBadge: "Перадплата: {{count}}",
+    call: "Патэлефанаваць",
   },
 };
 

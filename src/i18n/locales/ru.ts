@@ -165,6 +165,8 @@ const ru = {
   common: {
     undo: "Отменить",
     cancel: "Отмена",
+    copy: "Копировать",
+    copied: "Скопировано",
   },
   status: { scheduled: "Запланировано", completed: "Проведено", cancelled: "Не состоялось", no_show: "Ученик не пришёл" },
   payment: { paid: "Оплачено", unpaid: "Не оплачено" },
@@ -526,6 +528,10 @@ const ru = {
     messageHint: "Текст шаблона будет скопирован в буфер, затем откроется мессенджер.",
     sendToMessenger: "Открыть мессенджер",
     templateCopied: "Текст сообщения скопирован",
+    contacts: "Контакты",
+    nextLessonAt: "След. занятие: {{time}}",
+    prepaidBadge: "Предоплата: {{count}}",
+    call: "Позвонить",
   },
 };
 
