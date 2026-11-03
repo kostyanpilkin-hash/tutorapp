@@ -27,3 +27,4 @@ installers
 *.sln
 *.sw?
 .tmp-review
+tutor-scan.db*
