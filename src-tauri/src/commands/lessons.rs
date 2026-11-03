@@ -889,6 +889,45 @@ mod tests {
     }
 
     #[test]
+    fn expanded_dedupes_cancelled_exception_against_same_slot_row() {
+        let conn = test_conn();
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T10:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        insert_lesson_ex(
+            &conn,
+            "e1",
+            "Ivan",
+            "2026-03-16T10:00:00Z",
+            "cancelled",
+            None,
+            Some("p1"),
+            Some("2026-03-16T10:00:00.000Z"),
+        );
+        // A standalone lesson at the same student+instant — the slot shows
+        // one card (the real row), not a cancelled exception duplicate.
+        insert_lesson_ex(
+            &conn,
+            "s1",
+            "Ivan",
+            "2026-03-16T10:00:00Z",
+            "cancelled",
+            None,
+            None,
+            None,
+        );
+        let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-22T23:59:59Z");
+        assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z", "s1"]);
+    }
+
+    #[test]
     fn expanded_picks_best_exception_for_slot() {
         let conn = test_conn();
         insert_lesson_ex(

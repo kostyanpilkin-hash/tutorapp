@@ -27,13 +27,20 @@ import { isWeeklyRecurrence, parseByday, parseCount, parseUntil } from "@/lib/re
 // Production code must not import or copy this — the backend is the
 // single source of truth now.
 
-function sameInstant(a: string, b: Date | string): boolean {
-  return new Date(a).getTime() === new Date(b).getTime();
+// Backend claims exception rows by local DATE (a moved/cancelled exception
+// still suppresses its slot), not by instant.
+function sameLocalDay(a: string, b: Date): boolean {
+  const d = new Date(a);
+  return (
+    d.getFullYear() === b.getFullYear() &&
+    d.getMonth() === b.getMonth() &&
+    d.getDate() === b.getDate()
+  );
 }
 
 function pickException(exceptions: Lesson[], occurrence: Date): Lesson | undefined {
   const matches = exceptions.filter(
-    (e) => e.recurrenceInstanceDate && sameInstant(e.recurrenceInstanceDate, occurrence),
+    (e) => e.recurrenceInstanceDate && sameLocalDay(e.recurrenceInstanceDate, occurrence),
   );
   if (matches.length === 0) return undefined;
   const rank = (status: string) => {
@@ -92,7 +99,7 @@ function expandWeekly(
 
       if (occurrence >= from && occurrence <= to) {
         const matches = exceptions.filter(
-          (e) => e.recurrenceInstanceDate && sameInstant(e.recurrenceInstanceDate, occurrence),
+          (e) => e.recurrenceInstanceDate && sameLocalDay(e.recurrenceInstanceDate, occurrence),
         );
         for (const m of matches) usedExceptionIds.add(m.id);
 
@@ -100,10 +107,8 @@ function expandWeekly(
         const instanceKey = occurrence.toISOString();
 
         if (exception) {
-          if (exception.status !== "cancelled") {
-            const exStart = new Date(exception.startAt);
-            if (exStart >= from && exStart <= to) items.push(exception);
-          }
+          const exStart = new Date(exception.startAt);
+          if (exStart >= from && exStart <= to) items.push(exception);
         } else {
           items.push({
             ...lesson,
@@ -142,12 +147,37 @@ function expandLessons(lessons: Lesson[], from: Date, to: Date): Lesson[] {
   for (const lesson of lessons) {
     if (!lesson.recurrenceParentId) continue;
     if (usedExceptionIds.has(lesson.id)) continue;
-    if (lesson.status === "cancelled") continue;
     const start = new Date(lesson.startAt);
     if (start >= from && start <= to) result.push(lesson);
   }
 
-  return result
+  // Same (student, instant) dedupe as occurrences::collect: cancelled rows
+  // lose to a live row on the slot; among all-cancelled collisions the
+  // standalone record wins over the exception.
+  const groups = new Map<string, Lesson[]>();
+  for (const l of result) {
+    const key = `${l.studentName}|${new Date(l.startAt).getTime()}`;
+    const g = groups.get(key);
+    if (g) g.push(l);
+    else groups.set(key, [l]);
+  }
+  const kept = result.filter((l) => {
+    const g = groups.get(`${l.studentName}|${new Date(l.startAt).getTime()}`)!;
+    if (g.length < 2) return true;
+    if (g.some((x) => x.status !== "cancelled")) return l.status !== "cancelled";
+    let bestIdx = -1;
+    let bestRank = -1;
+    g.forEach((x, i) => {
+      const r = x.recurrenceParentId ? 0 : 1;
+      if (r >= bestRank) {
+        bestRank = r;
+        bestIdx = i;
+      }
+    });
+    return l === g[bestIdx];
+  });
+
+  return kept
     .filter((l) => {
       const start = new Date(l.startAt);
       return start >= from && start <= to;

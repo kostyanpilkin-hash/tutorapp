@@ -67,7 +67,10 @@ pub fn timezone(conn: &Connection) -> chrono_tz::Tz {
 }
 
 /// All occurrences whose local date falls in `[from, to]`, sorted by start.
-/// Cancelled exceptions are skipped. Deduped by occurrence id.
+/// Deduped by occurrence id, then by (student, instant): when two rows
+/// produce the same card — e.g. a cancelled exception plus a standalone
+/// lesson that replaced it — the more informative one wins (non-cancelled
+/// first, then real rows over series exceptions).
 pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveDate) -> Result<Vec<Occ>, String> {
     let mut stmt = conn
         .prepare(
@@ -114,6 +117,9 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
 
     let mut out: Vec<Occ> = Vec::new();
     let mut used_exceptions: HashSet<String> = HashSet::new();
+    // Ids of occurrences emitted from exception rows — the (student, instant)
+    // dedupe below prefers a real record over a cancelled exception.
+    let mut exception_ids: HashSet<String> = HashSet::new();
 
     // Exceptions grouped by parent id, resolved to their slot's instant.
     let mut exceptions: HashMap<String, Vec<&Raw>> = HashMap::new();
@@ -180,6 +186,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
                             if let Ok(dt) = best.start.parse::<DateTime<Utc>>() {
                                 let bd = dt.with_timezone(&tz).date_naive();
                                 if bd >= from && bd <= to {
+                                    exception_ids.insert(best.id.clone());
                                     out.push(mk_occ(best, best.id.clone(), dt, None));
                                 }
                             }
@@ -211,6 +218,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
         if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {
             let d = dt.with_timezone(&tz).date_naive();
             if d >= from && d <= to {
+                exception_ids.insert(r.id.clone());
                 out.push(mk_occ(r, r.id.clone(), dt, None));
             }
         }
@@ -218,6 +226,49 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
 
     let mut seen: HashSet<String> = HashSet::new();
     out.retain(|o| seen.insert(o.id.clone()));
+
+    // Same student + same instant from several rows (a cancelled exception
+    // plus the standalone lesson that replaced it) renders as duplicate
+    // cards. Cancelled occurrences never win such a collision: drop them
+    // when a live row covers the slot, or keep the real row when all
+    // colliding rows are cancelled.
+    let mut groups: HashMap<(String, i64), Vec<usize>> = HashMap::new();
+    for (i, o) in out.iter().enumerate() {
+        groups
+            .entry((o.name.clone(), o.start_utc.timestamp()))
+            .or_default()
+            .push(i);
+    }
+    let mut keep = vec![true; out.len()];
+    for idxs in groups.values() {
+        if idxs.len() < 2 {
+            continue;
+        }
+        if idxs.iter().any(|&i| out[i].status != "cancelled") {
+            for &i in idxs {
+                if out[i].status == "cancelled" {
+                    keep[i] = false;
+                }
+            }
+        } else {
+            let best = idxs
+                .iter()
+                .copied()
+                .max_by_key(|&i| u8::from(!exception_ids.contains(&out[i].id)))
+                .unwrap();
+            for &i in idxs {
+                if i != best {
+                    keep[i] = false;
+                }
+            }
+        }
+    }
+    let mut idx = 0usize;
+    out.retain(|_| {
+        let k = keep[idx];
+        idx += 1;
+        k
+    });
     out.sort_by(|a, b| a.start_utc.cmp(&b.start_utc));
     Ok(out)
 }
