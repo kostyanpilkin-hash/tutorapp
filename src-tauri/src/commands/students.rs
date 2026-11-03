@@ -447,13 +447,14 @@ pub fn get_student_finance(
                         earned: &mut BTreeMap<String, f64>,
                         debt: &mut BTreeMap<String, f64>,
                         expected: &mut BTreeMap<String, f64>| {
-            if status == "cancelled" || cost <= 0.0 {
+            // no_show is schedule-only: never counted in finance.
+            if status == "cancelled" || status == "no_show" || cost <= 0.0 {
                 return;
             }
             // Prepaid scheduled lessons still count as earned.
             if payment == "paid" {
                 add_amount(earned, currency, cost);
-            } else if status == "completed" || status == "no_show" {
+            } else if status == "completed" {
                 add_amount(debt, currency, cost);
             } else if status == "scheduled" {
                 if start_at < now {
@@ -470,7 +471,6 @@ pub fn get_student_finance(
                 if lesson.start_at < from
                     && (lesson.payment == "paid"
                         || lesson.status == "completed"
-                        || lesson.status == "no_show"
                         || lesson.status == "scheduled")
                 {
                     classify(

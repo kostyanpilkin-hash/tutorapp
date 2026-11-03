@@ -492,7 +492,7 @@ fn evening_summary(t: &T, occs: &[Occ], _tz: chrono_tz::Tz, fields: &[String]) -
     let done = occs.iter().filter(|o| o.status == "completed").count();
     let noshow = occs.iter().filter(|o| o.status == "no_show").count();
     let cancelled = occs.iter().filter(|o| o.status == "cancelled").count();
-    let unpaid: Vec<&Occ> = occs.iter().filter(|o| (o.status == "completed" || o.status == "no_show") && o.payment_status == "unpaid" && o.cost > 0.0).collect();
+    let unpaid: Vec<&Occ> = occs.iter().filter(|o| o.status == "completed" && o.payment_status == "unpaid" && o.cost > 0.0).collect();
     let mut s = format!(
         "<b>{}</b>\n<blockquote>✅ {} · ❌ {} · 🚫 {}</blockquote>\n",
         t.evening_digest(), done, noshow, cancelled,
@@ -516,7 +516,7 @@ fn debts_message(t: &T, conn: &Connection) -> Result<String, String> {
              FROM lessons l
              INNER JOIN lesson_students ls ON ls.lesson_id = l.id
              INNER JOIN students s ON s.id = ls.student_id
-             WHERE l.status IN ('completed','no_show')
+             WHERE l.status = 'completed'
                AND COALESCE(NULLIF(ls.payment_status,''), l.payment_status) != 'paid'
                AND COALESCE(ls.cost, l.cost) > 0
              GROUP BY s.name, cur ORDER BY s.name",

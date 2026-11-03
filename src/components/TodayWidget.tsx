@@ -151,9 +151,7 @@ export function TodayWidget({
     const current = lessons.filter((l) => isLessonNow(l, referenceNow));
     const upcoming = lessons.filter((l) => isLessonUpcoming(l, referenceNow));
     const debtCount = lessons.filter(
-      (l) =>
-        (l.status === "completed" || l.status === "no_show") &&
-        lessonPaymentStatus(l) === "unpaid",
+      (l) => l.status === "completed" && lessonPaymentStatus(l) === "unpaid",
     ).length;
     const doneCount = lessons.filter((l) => l.status === "completed").length;
     return { referenceNow, current, upcoming, debtCount, doneCount };
@@ -364,7 +362,7 @@ export function TodayWidget({
                         {t("today.markCancelled")}
                       </Button>
                     )}
-                    {unpaid && lesson.status !== "cancelled" && (
+                    {unpaid && lesson.status !== "cancelled" && lesson.status !== "no_show" && (
                       <Button
                         size="sm"
                         variant="outline"

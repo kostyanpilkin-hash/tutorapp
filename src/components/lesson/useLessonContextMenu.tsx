@@ -133,6 +133,7 @@ export function useLessonContextMenu({ onOpen }: Options) {
         id: "pay",
         label: paid ? t("payment.unpaid") : t("payment.paid"),
         icon: <Wallet className="h-4 w-4" />,
+        disabled: lesson.status === "no_show",
         onSelect: () => {
           void run(() => setLessonPaid(lesson, !paid), paid ? t("today.markedUnpaid") : t("today.markedPaid"));
         },

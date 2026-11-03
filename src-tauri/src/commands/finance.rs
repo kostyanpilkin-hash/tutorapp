@@ -181,7 +181,8 @@ fn classify_finance_amounts(
     debt: &mut BTreeMap<String, f64>,
     expected: &mut BTreeMap<String, f64>,
 ) -> Option<&'static str> {
-    if status == "cancelled" || cost <= 0.0 {
+    // no_show is schedule-only: never counted in finance.
+    if status == "cancelled" || status == "no_show" || cost <= 0.0 {
         return None;
     }
     // Paid money counts as earned even if the lesson is still scheduled (prepaid).
@@ -189,7 +190,7 @@ fn classify_finance_amounts(
         add_amount(earned, currency, cost);
         return Some("earned");
     }
-    if status == "completed" || status == "no_show" {
+    if status == "completed" {
         add_amount(debt, currency, cost);
         return Some("debt");
     }
@@ -641,7 +642,7 @@ pub(crate) fn debt_lessons(conn: &Connection) -> Result<Vec<DebtEntry>, String> 
                  FROM lessons l
                  INNER JOIN lesson_students ls ON ls.lesson_id = l.id
                  INNER JOIN students s ON s.id = ls.student_id
-                 WHERE l.status IN ('completed', 'no_show')
+                 WHERE l.status = 'completed'
                    AND COALESCE(NULLIF(ls.payment_status, ''), l.payment_status) != 'paid'
                    AND COALESCE(ls.cost, l.cost) > 0
                  ORDER BY l.start_at DESC",
@@ -759,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn debt_includes_no_show_unpaid() {
+    fn debt_excludes_no_show() {
         let conn = test_conn();
         insert_student(&conn, "s1", "Ivan");
         insert_lesson(
@@ -772,7 +773,7 @@ mod tests {
             "USD",
             &[("s1", None, "", "unpaid")],
         );
-        assert_eq!(debt_lessons(&conn).unwrap().len(), 1);
+        assert!(debt_lessons(&conn).unwrap().is_empty());
     }
 
     #[test]
