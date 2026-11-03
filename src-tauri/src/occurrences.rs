@@ -175,12 +175,12 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
                             used_exceptions.insert(m.id.clone());
                         }
                         if let Some(best) = pick_exception(&slot_matches) {
-                            if best.status != "cancelled" {
-                                if let Ok(dt) = best.start.parse::<DateTime<Utc>>() {
-                                    let bd = dt.with_timezone(&tz).date_naive();
-                                    if bd >= from && bd <= to {
-                                        out.push(mk_occ(best, best.id.clone(), dt, None));
-                                    }
+                            // Emit even cancelled exceptions: they stay visible
+                            // in the schedule (finance/overlaps filter them).
+                            if let Ok(dt) = best.start.parse::<DateTime<Utc>>() {
+                                let bd = dt.with_timezone(&tz).date_naive();
+                                if bd >= from && bd <= to {
+                                    out.push(mk_occ(best, best.id.clone(), dt, None));
                                 }
                             }
                         } else {
@@ -206,9 +206,6 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
     // Exception rows not consumed by a series slot (e.g. rescheduled away).
     for r in &rows {
         if r.parent.is_none() || used_exceptions.contains(&r.id) {
-            continue;
-        }
-        if r.status == "cancelled" {
             continue;
         }
         if let Ok(dt) = r.start.parse::<DateTime<Utc>>() {

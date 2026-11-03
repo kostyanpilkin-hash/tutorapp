@@ -861,7 +861,7 @@ mod tests {
     }
 
     #[test]
-    fn expanded_skips_cancelled_exception_slot() {
+    fn expanded_shows_cancelled_exception_slot() {
         let conn = test_conn();
         insert_lesson_ex(
             &conn,
@@ -883,8 +883,9 @@ mod tests {
             Some("p1"),
             Some("2026-03-16T10:00:00.000Z"),
         );
+        // Cancelled stays visible in the schedule (finance/overlaps filter it).
         let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-22T23:59:59Z");
-        assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z"]);
+        assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z", "e1"]);
     }
 
     #[test]
