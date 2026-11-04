@@ -369,8 +369,8 @@ pub fn get_student_finance(
         let sql = r#"SELECT l.id, l.start_at, l.status, l.recurrence_rule,
                         l.recurrence_parent_id, l.recurrence_instance_date,
                         COALESCE(ls.cost, l.cost) AS cost,
-                        COALESCE(ls.currency, l.currency, "USD") AS currency,
-                        COALESCE(ls.payment_status, l.payment_status) AS payment
+                        COALESCE(NULLIF(ls.currency, ''), NULLIF(l.currency, ''), 'USD') AS currency,
+                        COALESCE(NULLIF(ls.payment_status, ''), l.payment_status) AS payment
                  FROM lesson_students ls
                  JOIN lessons l ON l.id = ls.lesson_id
                  WHERE ls.student_id = ?1"#;
@@ -456,9 +456,9 @@ pub fn get_student_finance(
             } else if status == "completed" || status == "no_show" {
                 add_amount(debt, currency, cost);
             } else if status == "scheduled" {
-                if start_at < now {
-                    add_amount(debt, currency, cost);
-                } else {
+                // Past unmarked lessons are unaccounted, not debt — same
+                // rule as the Debts tab (only completed/no_show count).
+                if start_at >= now {
                     add_amount(expected, currency, cost);
                 }
             }
@@ -509,14 +509,30 @@ pub fn get_student_finance(
                 to,
                 tz,
             ) {
-                let exception = exceptions.iter().find(|ex| {
-                    ex.recurrence_parent_id.as_deref() == Some(parent.id.as_str())
-                        && ex
-                            .recurrence_instance_date
-                            .as_deref()
-                            .and_then(|raw| raw.parse::<DateTime<Utc>>().ok())
-                            .is_some_and(|dt| dt.timestamp() == instance_start.timestamp())
-                });
+                // Same claim semantics as occurrences::collect: exceptions
+                // bind a slot by local date, best status wins.
+                let rank = |status: &str| -> u8 {
+                    match status {
+                        "completed" => 4,
+                        "no_show" => 3,
+                        "cancelled" => 2,
+                        _ => 1,
+                    }
+                };
+                let slot_day = instance_start.with_timezone(&tz).date_naive();
+                let exception = exceptions
+                    .iter()
+                    .filter(|ex| {
+                        ex.recurrence_parent_id.as_deref() == Some(parent.id.as_str())
+                            && ex
+                                .recurrence_instance_date
+                                .as_deref()
+                                .and_then(|raw| raw.parse::<DateTime<Utc>>().ok())
+                                .is_some_and(|dt| {
+                                    dt.with_timezone(&tz).date_naive() == slot_day
+                                })
+                    })
+                    .max_by_key(|ex| rank(&ex.status));
                 if let Some(exception) = exception {
                     counted_exception_ids.insert(exception.id.clone());
                     classify(

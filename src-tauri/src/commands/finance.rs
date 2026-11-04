@@ -150,23 +150,34 @@ fn parse_instance_dt(raw: &str) -> Option<DateTime<Utc>> {
     raw.parse::<DateTime<Utc>>().ok()
 }
 
-fn same_instant(a: DateTime<Utc>, b: DateTime<Utc>) -> bool {
-    a.timestamp() == b.timestamp()
-}
-
+/// Same exception-claim semantics as `occurrences::collect`: exceptions bind
+/// to a slot by LOCAL DATE (not instant), the best status wins.
 fn find_exception<'a>(
     exceptions: &'a [LessonFinanceBase],
     parent_id: &str,
     instance_start: DateTime<Utc>,
+    tz: Tz,
 ) -> Option<&'a LessonFinanceBase> {
-    exceptions.iter().find(|ex| {
-        ex.recurrence_parent_id.as_deref() == Some(parent_id)
-            && ex
-                .recurrence_instance_date
-                .as_deref()
-                .and_then(parse_instance_dt)
-                .is_some_and(|dt| same_instant(dt, instance_start))
-    })
+    let rank = |status: &str| -> u8 {
+        match status {
+            "completed" => 4,
+            "no_show" => 3,
+            "cancelled" => 2,
+            _ => 1,
+        }
+    };
+    let slot_day = instance_start.with_timezone(&tz).date_naive();
+    exceptions
+        .iter()
+        .filter(|ex| {
+            ex.recurrence_parent_id.as_deref() == Some(parent_id)
+                && ex
+                    .recurrence_instance_date
+                    .as_deref()
+                    .and_then(parse_instance_dt)
+                    .is_some_and(|dt| dt.with_timezone(&tz).date_naive() == slot_day)
+        })
+        .max_by_key(|ex| rank(&ex.status))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -194,13 +205,12 @@ fn classify_finance_amounts(
         return Some("debt");
     }
     if status == "scheduled" {
-        // Past unpaid scheduled lessons are debt; only future ones are expected.
-        if start_at < now {
-            add_amount(debt, currency, cost);
-            return Some("debt");
+        // Past unmarked lessons are unaccounted, not debt — only
+        // completed/no_show create a debt (same rule as the Debts tab).
+        if start_at >= now {
+            add_amount(expected, currency, cost);
+            return Some("expected");
         }
-        add_amount(expected, currency, cost);
-        return Some("expected");
     }
     None
 }
@@ -243,7 +253,7 @@ fn build_finance_entries(
 
     for parent in parents {
         for instance_start in expand_weekly_instances(parent.start_at, &parent.recurrence_rule, from, to, tz) {
-            if let Some(exception) = find_exception(&exceptions, &parent.id, instance_start) {
+            if let Some(exception) = find_exception(&exceptions, &parent.id, instance_start, tz) {
                 used_exception_ids.insert(exception.id.clone());
                 // The exception belongs to the period containing its actual start;
                 // suppressing the slot must not count it here when it was moved away.
@@ -447,8 +457,17 @@ pub(crate) fn finance_report(
         let entries = build_finance_entries(&lessons, from, to, tz);
         let now = Utc::now();
 
-        let mut earned_map: BTreeMap<String, f64> = BTreeMap::new();
+        // The debt card shows TOTAL outstanding debt — the same number as the
+        // Debts tab and the Telegram /debts list — not just this period's.
         let mut debt_map: BTreeMap<String, f64> = BTreeMap::new();
+        for d in debt_lessons(conn)? {
+            add_amount(&mut debt_map, &d.currency, d.cost);
+        }
+
+        // Period-scoped debt for the timeline/subject tables ("debt incurred
+        // here"), separate from the all-time card total.
+        let mut period_debt_map: BTreeMap<String, f64> = BTreeMap::new();
+        let mut earned_map: BTreeMap<String, f64> = BTreeMap::new();
         let mut expected_map: BTreeMap<String, f64> = BTreeMap::new();
         let mut subject_map: BTreeMap<(String, String), (f64, f64, f64)> = BTreeMap::new();
         // Key: (time bucket, currency) — never mix different currencies in one bucket.
@@ -479,7 +498,7 @@ pub(crate) fn finance_report(
                 entry.start_at,
                 now,
                 &mut earned_map,
-                &mut debt_map,
+                &mut period_debt_map,
                 &mut expected_map,
             ) {
                 Some("earned") => {
@@ -500,7 +519,7 @@ pub(crate) fn finance_report(
 
         let mut currencies: Vec<String> = earned_map
             .keys()
-            .chain(debt_map.keys())
+            .chain(period_debt_map.keys())
             .chain(expected_map.keys())
             .cloned()
             .collect();
@@ -1113,7 +1132,7 @@ mod tests {
         };
 
         // March: the Mar-30 slot is suppressed by the moved-away exception —
-        // 4 unpaid past slots => debt 80, and the paid lesson is NOT counted here.
+        // nothing earned/debt here; the paid lesson counts only in April.
         let march = finance_report(
             &conn,
             "month",
@@ -1124,10 +1143,10 @@ mod tests {
         )
         .unwrap();
         assert!(march.earned.is_empty());
-        assert!((usd(&march.debt) - 80.0).abs() < 1e-9);
+        assert!(march.debt.is_empty());
 
-        // April: the exception is counted exactly once (earned 20);
-        // the 4 April parent slots are past scheduled unpaid => debt 80.
+        // April: the exception is counted exactly once (earned 20).
+        // Past scheduled slots are unaccounted, not debt.
         let april = finance_report(
             &conn,
             "month",
@@ -1138,6 +1157,73 @@ mod tests {
         )
         .unwrap();
         assert!((usd(&april.earned) - 20.0).abs() < 1e-9);
-        assert!((usd(&april.debt) - 80.0).abs() < 1e-9);
+        assert!(april.debt.is_empty());
+    }
+
+    #[test]
+    fn finance_debt_is_total_outstanding_like_debts_tab() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        // A debt from a different period must still appear in the report
+        // header — the card mirrors the Debts tab, not just this period.
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-01-10T10:00:00Z",
+            "completed",
+            "unpaid",
+            Some(50.0),
+            "USD",
+            &[("s1", None, "", "unpaid")],
+        );
+        let tz: Tz = "Europe/Minsk".parse().unwrap();
+        let march = finance_report(
+            &conn,
+            "month",
+            "2026-03-15T12:00:00Z".parse().unwrap(),
+            None,
+            None,
+            tz,
+        )
+        .unwrap();
+        assert!((amount(&march, "USD").unwrap_or(0.0) - 0.0).abs() < 1e-9);
+        let debt_usd = march
+            .debt
+            .iter()
+            .find(|e| e.currency == "USD")
+            .map(|e| e.amount)
+            .unwrap_or(0.0);
+        assert!((debt_usd - 50.0).abs() < 1e-9);
+        assert_eq!(debt_lessons(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn finance_past_scheduled_is_not_debt() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        // Unmarked past scheduled lesson: unaccounted, not a debt.
+        insert_lesson(
+            &conn,
+            "l1",
+            "2026-03-10T10:00:00Z",
+            "scheduled",
+            "unpaid",
+            Some(50.0),
+            "USD",
+            &[("s1", None, "", "unpaid")],
+        );
+        let tz: Tz = "Europe/Minsk".parse().unwrap();
+        let march = finance_report(
+            &conn,
+            "month",
+            "2026-03-15T12:00:00Z".parse().unwrap(),
+            None,
+            None,
+            tz,
+        )
+        .unwrap();
+        assert!(march.debt.is_empty());
+        assert!(march.expected.is_empty());
+        assert!(debt_lessons(&conn).unwrap().is_empty());
     }
 }
