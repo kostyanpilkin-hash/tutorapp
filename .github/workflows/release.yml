@@ -48,9 +48,14 @@ jobs:
         include:
           - platform: windows-latest
             args: "--bundles msi,nsis"
+          # macOS runners can sit in queue for 15+ min and get cancelled on
+          # private repos; a cancelled leg must not block the release —
+          # latest.json will just contain Windows until a rerun lands it.
           - platform: macos-latest
             args: "--target universal-apple-darwin"
+            can-fail: true
     runs-on: ${{ matrix.platform }}
+    continue-on-error: ${{ matrix.can-fail || false }}
     steps:
       - uses: actions/checkout@v4
 
@@ -103,25 +108,33 @@ jobs:
           mkdir -p sig
           gh release download "$TAG" --repo "$REPO" --pattern "*.sig" --dir sig --clobber
           NSIS_SIG=$(ls sig/*-setup.exe.sig | head -1)
-          APP_SIG=$(ls sig/*.app.tar.gz.sig | head -1)
           NSIS=$(basename "$NSIS_SIG" .sig)
-          APP=$(basename "$APP_SIG" .sig)
           BASE="https://github.com/$REPO/releases/download/$TAG"
           enc() { jq -rn --arg s "$1" '$s|@uri'; }
-          # Universal macOS binary: each arch slice asks for its own target
-          # key, so all three point at the same universal payload.
+          PLATFORMS=$(jq -n \
+            --arg wsig "$(cat "$NSIS_SIG")" \
+            --arg wurl "$BASE/$(enc "$NSIS")" \
+            '{"windows-x86_64": {signature:$wsig, url:$wurl}}')
+          # macOS leg is best-effort (can-fail): add darwin targets only when
+          # its .sig actually made it into the release.
+          APP_SIG=$(ls sig/*.app.tar.gz.sig 2>/dev/null | head -1 || true)
+          if [[ -n "$APP_SIG" && -f "$APP_SIG" ]]; then
+            APP=$(basename "$APP_SIG" .sig)
+            PLATFORMS=$(jq -n --argjson p "$PLATFORMS" \
+              --arg msig "$(cat "$APP_SIG")" \
+              --arg murl "$BASE/$(enc "$APP")" \
+              '$p + {
+                "darwin-universal": {signature:$msig, url:$murl},
+                "darwin-aarch64": {signature:$msig, url:$murl},
+                "darwin-x86_64": {signature:$msig, url:$murl}}')
+          else
+            echo "::warning::No macOS .sig found — latest.json will be Windows-only"
+          fi
           jq -n \
             --arg v "$TAG" \
             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg wsig "$(cat "$NSIS_SIG")" \
-            --arg wurl "$BASE/$(enc "$NSIS")" \
-            --arg msig "$(cat "$APP_SIG")" \
-            --arg murl "$BASE/$(enc "$APP")" \
-            '{version:$v, notes:"", pub_date:$date, platforms:{
-              "windows-x86_64": {signature:$wsig, url:$wurl},
-              "darwin-universal": {signature:$msig, url:$murl},
-              "darwin-aarch64": {signature:$msig, url:$murl},
-              "darwin-x86_64": {signature:$msig, url:$murl}}}' \
+            --argjson p "$PLATFORMS" \
+            '{version:$v, notes:"", pub_date:$date, platforms:$p}' \
             > latest.json
           cat latest.json
           gh release upload "$TAG" latest.json --repo "$REPO" --clobber

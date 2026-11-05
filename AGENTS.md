@@ -14,6 +14,7 @@
 - Код — приватный `tutorapp`; установщики и `latest.json` публикуются в публичном `kostyanpilkin-hash/tutorapp_public` через `.github/workflows/release.yml`: тег `v*` (или workflow_dispatch) → черновой релиз → Publish.
 - Апдейтер: `tauri-plugin-updater` + `UpdateNotifier` (проверка через 15 с после запуска и каждые 30 мин) + кнопка «Проверить обновления» в Настройки → «О программе». `latest.json` виден только после Publish — черновики `releases/latest` игнорирует.
 - Подпись minisign: pubkey в `tauri.conf.json`; приватный ключ `~/.tauri/tutorapp.key` — его содержимое в секрете `TAURI_SIGNING_PRIVATE_KEY`, пароль в `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Потеря ключа/пароля = нужна новая пара и перевыпуск клиентов.
+- Локальная сборка установщика теперь требует ключ: `TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/tutorapp.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=… npx tauri build` — вариант `TAURI_SIGNING_PRIVATE_KEY_PATH` не срабатывает (кириллица в `C:\Users\***\`).
 - `PUBLIC_RELEASES_TOKEN` — fine-grained PAT, Contents: Read & Write, только на `tutorapp_public`.
 - Версию бампить до тега во всех трёх местах: `tauri.conf.json`, `package.json`, `src-tauri/Cargo.toml`.
 
