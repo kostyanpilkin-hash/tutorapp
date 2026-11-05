@@ -279,6 +279,7 @@ const be = {
       templates: "Шаблоны",
       integrations: "Інтэграцыі",
       data: "Даныя",
+      about: "Аб праграме",
       help: "Даведка",
     },
     themes: {
@@ -320,6 +321,20 @@ const be = {
     themePickerTitle: "Выбар тэмы афармлення",
     help: "Дапамога",
     helpTitle: "Дапамога па TutorApp",
+    version: "Версія {{version}}",
+  },
+  update: {
+    available: "Даступна версія {{version}}",
+    install: "Усталяваць",
+    later: "Пазней",
+    downloading: "Спампоўваю абнаўленне… {{percent}}%",
+    ready: "Абнаўленне ўстаноўлена",
+    restart: "Перазапусціць",
+    check: "Праверыць абнаўленні",
+    checking: "Правяраю…",
+    upToDate: "Усталявана апошняя версія",
+    failed: "Не атрымалася праверыць абнаўленні",
+    retry: "Паўтарыць",
   },
   help: {
     quickStart: {

@@ -42,6 +42,15 @@
     ],
     "shortDescription": "Приложение для репетитора",
     "longDescription": "Календарь занятий, напоминания и планирование для репетиторов",
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEwOTdGNUQxNkIxNkZENjgKUldSby9SWnIwZldYRUluMm9mdlg5R3poWjZRdk5RUHhTQWkrSkVZa1crOCtPZGp6ZHRkS1ZLQ04K",
+      "endpoints": [
+        "https://github.com/kostyanpilkin-hash/tutorapp_public/releases/latest/download/latest.json"
+      ],
+      "windows": { "installMode": "basicUi" }
+    }
   }
 }

@@ -1,0 +1,127 @@
+name: Release
+
+# Push a tag like v0.2.1 to build installers for Windows and macOS and
+# publish them as a release in the public repository tutorapp_public.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release version tag
+        required: true
+        default: v0.2.1
+        type: string
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - name: Prepare public draft release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" == v* ]] || { echo "Run this workflow on a version tag"; exit 1; }
+          REPO=kostyanpilkin-hash/tutorapp_public
+          SHA=$(gh api "repos/$REPO/branches/main" --jq '.commit.sha')
+          RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [[ -z "$RELEASES" ]]; then
+            RELEASES=$(gh api --method POST "repos/$REPO/releases" \
+              -f tag_name="$TAG" -f target_commitish="$SHA" \
+              -f name="TutorApp $TAG" -f body="Установщики для Windows и macOS." \
+              -F draft=true --jq '.id')
+          fi
+          [[ "$RELEASES" =~ ^[0-9]+$ ]]
+          echo "id=$RELEASES" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: "--bundles msi,nsis"
+          - platform: macos-latest
+            args: "--target universal-apple-darwin"
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.platform }}
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          # Fine-grained PAT with Contents: Read & Write on tutorapp_public only.
+          GITHUB_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          owner: kostyanpilkin-hash
+          repo: tutorapp_public
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          tagName: ${{ inputs.release_tag || github.ref_name }}
+          releaseName: "TutorApp ${{ inputs.release_tag || github.ref_name }}"
+          releaseBody: "Установщики для Windows (.msi / -setup.exe) и macOS (.dmg, Apple Silicon + Intel)."
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: false
+          args: ${{ matrix.args }}
+
+  # Both matrix builds only produce their own platform's .sig assets; merge
+  # them into a single latest.json so the updater sees all platforms.
+  manifest:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assemble and upload latest.json
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+          REPO: kostyanpilkin-hash/tutorapp_public
+        run: |
+          set -euo pipefail
+          mkdir -p sig
+          gh release download "$TAG" --repo "$REPO" --pattern "*.sig" --dir sig --clobber
+          NSIS_SIG=$(ls sig/*-setup.exe.sig | head -1)
+          APP_SIG=$(ls sig/*.app.tar.gz.sig | head -1)
+          NSIS=$(basename "$NSIS_SIG" .sig)
+          APP=$(basename "$APP_SIG" .sig)
+          BASE="https://github.com/$REPO/releases/download/$TAG"
+          enc() { jq -rn --arg s "$1" '$s|@uri'; }
+          # Universal macOS binary: each arch slice asks for its own target
+          # key, so all three point at the same universal payload.
+          jq -n \
+            --arg v "$TAG" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg wsig "$(cat "$NSIS_SIG")" \
+            --arg wurl "$BASE/$(enc "$NSIS")" \
+            --arg msig "$(cat "$APP_SIG")" \
+            --arg murl "$BASE/$(enc "$APP")" \
+            '{version:$v, notes:"", pub_date:$date, platforms:{
+              "windows-x86_64": {signature:$wsig, url:$wurl},
+              "darwin-universal": {signature:$msig, url:$murl},
+              "darwin-aarch64": {signature:$msig, url:$murl},
+              "darwin-x86_64": {signature:$msig, url:$murl}}}' \
+            > latest.json
+          cat latest.json
+          gh release upload "$TAG" latest.json --repo "$REPO" --clobber

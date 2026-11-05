@@ -8,6 +8,8 @@
     "opener:default",
     "notification:default",
     "shell:allow-open",
-    "autostart:default"
+    "autostart:default",
+    "updater:default",
+    "process:default"
   ]
 }

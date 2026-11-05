@@ -279,6 +279,7 @@ const ru = {
       templates: "Шаблоны",
       integrations: "Интеграции",
       data: "Данные",
+      about: "О программе",
       help: "Справка",
     },
     themes: {
@@ -320,6 +321,20 @@ const ru = {
     themePickerTitle: "Выбор темы оформления",
     help: "Справка",
     helpTitle: "Справка по TutorApp",
+    version: "Версия {{version}}",
+  },
+  update: {
+    available: "Доступна версия {{version}}",
+    install: "Установить",
+    later: "Позже",
+    downloading: "Скачиваю обновление… {{percent}}%",
+    ready: "Обновление установлено",
+    restart: "Перезапустить",
+    check: "Проверить обновления",
+    checking: "Проверяю…",
+    upToDate: "Установлена последняя версия",
+    failed: "Не удалось проверить обновления",
+    retry: "Повторить",
   },
   help: {
     quickStart: {

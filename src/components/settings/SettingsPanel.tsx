@@ -12,6 +12,7 @@ import {
   Globe,
   GraduationCap,
   Home,
+  Info,
   Languages,
   MessageSquare,
   Palette,
@@ -28,6 +29,7 @@ import { keys } from "@/lib/queryKeys";
 import type { MessageTemplate } from "@/lib/messageTemplates";
 import { loadMessageTemplates, saveMessageTemplates } from "@/lib/messageTemplates";
 import { useToastStore } from "@/stores/toastStore";
+import { useUpdateStore } from "@/stores/updateStore";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -61,6 +63,7 @@ const SECTIONS = [
   { id: "templates", icon: MessageSquare },
   { id: "integrations", icon: Blocks },
   { id: "data", icon: Database },
+  { id: "about", icon: Info },
   { id: "help", icon: BookOpen },
 ] as const;
 
@@ -86,6 +89,19 @@ function SettingRow({
       </div>
       <div className="shrink-0">{children}</div>
     </div>
+  );
+}
+
+function UpdateCheckButton() {
+  const { t } = useTranslation();
+  const { phase, checkNow } = useUpdateStore();
+  return (
+    <span className="flex items-center gap-2">
+      <Button size="sm" variant="outline" onClick={() => void checkNow(true)} disabled={phase === "checking" || phase === "downloading"}>
+        {phase === "checking" ? t("update.checking") : t("update.check")}
+      </Button>
+      {phase === "uptodate" && <span className="text-xs text-primary">{t("update.upToDate")}</span>}
+    </span>
   );
 }
 
@@ -205,6 +221,12 @@ export function SettingsPanel() {
     staleTime: Infinity,
   });
   const dbPath = dbPathQuery.data ?? "";
+
+  const appInfo = useQuery({
+    queryKey: ["app-info"],
+    queryFn: () => api.appInfo(),
+    staleTime: Infinity,
+  });
 
   useEffect(() => {
     void isEnabled().then(setAutostart);
@@ -754,6 +776,14 @@ export function SettingsPanel() {
     </div>
   );
 
+  const aboutSection = (
+    <>
+      <SettingRow icon={Info} label={t("app.title")} hint={t("settings.version", { version: appInfo.data?.version ?? "—" })}>
+        <UpdateCheckButton />
+      </SettingRow>
+    </>
+  );
+
   const helpSection = (
     <Button variant="outline" onClick={() => setHelpOpen(true)} className="w-full">
       <BookOpen className="mr-2 h-4 w-4" />
@@ -786,6 +816,7 @@ export function SettingsPanel() {
           {section === "templates" && templatesSection}
           {section === "integrations" && integrationsSection}
           {section === "data" && dataSection}
+          {section === "about" && aboutSection}
           {section === "help" && helpSection}
         </div>
       </div>

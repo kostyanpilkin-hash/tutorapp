@@ -37,6 +37,14 @@ pub fn set_setting(
 }
 
 #[tauri::command]
+pub fn app_info(app: tauri::AppHandle) -> serde_json::Value {
+    serde_json::json!({
+        "version": app.package_info().version.to_string(),
+        "platform": std::env::consts::OS,
+    })
+}
+
+#[tauri::command]
 pub fn get_db_path(state: tauri::State<AppState>) -> Result<String, String> {
     Ok(state.db_path.to_string_lossy().to_string())
 }

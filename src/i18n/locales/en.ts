@@ -279,6 +279,7 @@ const en = {
       templates: "Templates",
       integrations: "Integrations",
       data: "Data",
+      about: "About",
       help: "Help",
     },
     themes: {
@@ -320,6 +321,20 @@ const en = {
     themePickerTitle: "Choose a theme",
     help: "Help",
     helpTitle: "TutorApp Help",
+    version: "Version {{version}}",
+  },
+  update: {
+    available: "Version {{version}} available",
+    install: "Install",
+    later: "Later",
+    downloading: "Downloading update… {{percent}}%",
+    ready: "Update installed",
+    restart: "Restart",
+    check: "Check for updates",
+    checking: "Checking…",
+    upToDate: "You're up to date",
+    failed: "Couldn't check for updates",
+    retry: "Retry",
   },
   help: {
     quickStart: {

@@ -107,6 +107,8 @@ export const api = {
       }),
     ),
 
+  appInfo: () => call(() => invoke<{ version: string; platform: string }>("app_info")),
+
   getDbPath: () => call(() => invoke<string>("get_db_path")),
 
   backupDatabase: () => call(() => invoke<string | null>("backup_database")),

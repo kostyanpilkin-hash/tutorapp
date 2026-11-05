@@ -38,6 +38,8 @@ pub fn run() {
             Some(vec![]),
         ))
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             get_lessons,
@@ -55,6 +57,7 @@ pub fn run() {
             get_fired_reminders,
             get_settings,
             set_setting,
+            app_info,
             get_db_path,
             backup_database,
             snooze_reminder,

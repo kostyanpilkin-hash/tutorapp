@@ -29,6 +29,7 @@ const HistoryPanel = lazy(() =>
 import { RemindersPanel } from "@/components/reminders/RemindersPanel";
 import { StudentsPanel } from "@/components/students/StudentsPanel";
 import { ToastHost } from "@/components/ui/ToastHost";
+import { UpdateNotifier } from "@/components/UpdateNotifier";
 import { ContextMenuProvider } from "@/components/ui/context-menu";
 import { Button } from "@/components/ui/button";
 import i18n from "@/i18n";
@@ -410,6 +411,7 @@ export default function App() {
           onSetTheme={(theme) => void setTheme(theme)}
         />
         <ToastHost />
+        <UpdateNotifier />
       </div>
     </ContextMenuProvider>
   );
