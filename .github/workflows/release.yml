@@ -51,7 +51,9 @@ jobs:
           # macOS runners can sit in queue for 15+ min and get cancelled on
           # private repos; a cancelled leg must not block the release —
           # latest.json will just contain Windows until a rerun lands it.
-          - platform: macos-latest
+          # macos-14 pinned: 'macos-latest' currently migrates to macos-15
+          # and its pool is the most contended; macos-14 (arm64) queues faster.
+          - platform: macos-14
             args: "--target universal-apple-darwin"
             can-fail: true
     runs-on: ${{ matrix.platform }}
