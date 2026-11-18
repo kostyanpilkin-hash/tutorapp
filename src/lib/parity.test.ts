@@ -235,8 +235,8 @@ function loadRows(): Lesson[] {
 }
 
 describe.skipIf(!ready)("backend/frontend expansion parity (real DB copy)", () => {
-  const dump = JSON.parse(readFileSync(outPath, "utf8")) as DumpRange[];
-  const lessons = loadRows();
+  const dump = (ready ? JSON.parse(readFileSync(outPath, "utf8")) : []) as DumpRange[];
+  const lessons = ready ? loadRows() : [];
 
   for (const range of dump) {
     it(`matches for range "${range.name}"`, () => {

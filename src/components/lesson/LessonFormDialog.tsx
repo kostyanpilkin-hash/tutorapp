@@ -4,7 +4,7 @@ import { format } from "date-fns";
 import type { Lesson, LessonInput, LessonStudentInput, RecurrenceEditScope } from "@/types/lesson";
 import { lessonToInput } from "@/types/lesson";
 import { studentToInput } from "@/types/student";
-import { api } from "@/lib/api";
+import { api, overlapNamesFromError } from "@/lib/api";
 import { CURRENCIES } from "@/lib/money";
 import { formatTimeInTimezone } from "@/lib/contacts";
 import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, withUntil, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
@@ -278,6 +278,10 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       setReminderMins([...new Set(sorted)]);
     }
     setOverlapWarning(null);
+    setPendingScope(null);
+    setScopeOpen(false);
+    setPaymentPromptOpen(false);
+    setPickerOpen(false);
   }, [open, lesson, initialDate, initialStudentIds, defaultDuration, defaultReminders]);
 
   const applyStudentDefaults = (ids: string[]) => {
@@ -388,68 +392,82 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       return;
     }
 
-    if (lesson) {
-      const id = realLessonId(lesson.id);
-      const parentId = parentLessonId(lesson);
-      const instanceDate = lesson.recurrenceInstanceDate || lesson.startAt;
+    try {
+      if (lesson) {
+        const id = realLessonId(lesson.id);
+        const parentId = parentLessonId(lesson);
+        const instanceDate = lesson.recurrenceInstanceDate || lesson.startAt;
 
-      if (scope === "this" && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
-        await api.createLesson({
-          ...input,
-          recurrenceRule: null,
-          recurrenceParentId: parentId,
-          recurrenceInstanceDate: instanceDate,
-        });
-      } else if (scope === "thisAndFuture" && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
-        const parent = await api.getLesson(parentId);
-        const until = new Date(instanceDate);
-        await api.updateLesson(parentId, {
-          ...lessonToInput(parent),
-          recurrenceRule: withUntil(parent.recurrenceRule || WEEKLY_RULE, until),
-        });
-        await api.createLesson({
-          ...input,
-          recurrenceRule: buildRecurrenceRule() || WEEKLY_RULE,
-          recurrenceParentId: null,
-          recurrenceInstanceDate: null,
-        });
-      } else if (scope === "all" && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
-        const parent = await api.getLesson(parentId);
-        // Keep series anchor date; apply new time-of-day from the form.
-        const parentStart = new Date(parent.startAt);
-        const nextStart = new Date(input.startAt);
-        parentStart.setHours(
-          nextStart.getHours(),
-          nextStart.getMinutes(),
-          0,
-          0,
-        );
-        // If weekday changed, shift the series to the new weekday.
-        const dayDelta = nextStart.getDay() - new Date(instanceDate).getDay();
-        if (dayDelta !== 0) {
-          parentStart.setDate(parentStart.getDate() + dayDelta);
+        if (scope === "this" && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
+          if (lesson.recurrenceParentId && !lesson.id.includes("::")) {
+            // Уже материализованная exception-строка — это обновление, не создание.
+            await api.updateLesson(lesson.id, input);
+          } else {
+            await api.createLesson({
+              ...input,
+              recurrenceRule: null,
+              recurrenceParentId: parentId,
+              recurrenceInstanceDate: instanceDate,
+            });
+          }
+        } else if (scope === "thisAndFuture" && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
+          const parent = await api.getLesson(parentId);
+          const until = new Date(instanceDate);
+          await api.updateLesson(parentId, {
+            ...lessonToInput(parent),
+            recurrenceRule: withUntil(parent.recurrenceRule || WEEKLY_RULE, until),
+          });
+          await api.createLesson({
+            ...input,
+            recurrenceRule: buildRecurrenceRule() || WEEKLY_RULE,
+            recurrenceParentId: null,
+            recurrenceInstanceDate: null,
+          });
+        } else if (scope === "all" && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
+          const parent = await api.getLesson(parentId);
+          // Keep series anchor date; apply new time-of-day from the form.
+          const parentStart = new Date(parent.startAt);
+          const nextStart = new Date(input.startAt);
+          parentStart.setHours(
+            nextStart.getHours(),
+            nextStart.getMinutes(),
+            0,
+            0,
+          );
+          // If weekday changed, shift the series to the new weekday.
+          const dayDelta = nextStart.getDay() - new Date(instanceDate).getDay();
+          if (dayDelta !== 0) {
+            parentStart.setDate(parentStart.getDate() + dayDelta);
+          }
+          await api.updateLesson(parentId, {
+            ...input,
+            startAt: parentStart.toISOString(),
+            recurrenceRule: input.recurrenceRule || parent.recurrenceRule || WEEKLY_RULE,
+            recurrenceParentId: null,
+            recurrenceInstanceDate: null,
+          });
+        } else if (isRecurrenceInstance(lesson) && !lesson.recurrenceParentId) {
+          await api.createLesson({
+            ...input,
+            recurrenceRule: null,
+            recurrenceParentId: parentId,
+            recurrenceInstanceDate: instanceDate,
+          });
+        } else if (lesson.recurrenceParentId) {
+          await api.updateLesson(lesson.id, input);
+        } else {
+          await api.updateLesson(id, input);
         }
-        await api.updateLesson(parentId, {
-          ...input,
-          startAt: parentStart.toISOString(),
-          recurrenceRule: input.recurrenceRule || parent.recurrenceRule || WEEKLY_RULE,
-          recurrenceParentId: null,
-          recurrenceInstanceDate: null,
-        });
-      } else if (isRecurrenceInstance(lesson) && !lesson.recurrenceParentId) {
-        await api.createLesson({
-          ...input,
-          recurrenceRule: null,
-          recurrenceParentId: parentId,
-          recurrenceInstanceDate: instanceDate,
-        });
-      } else if (lesson.recurrenceParentId) {
-        await api.updateLesson(lesson.id, input);
       } else {
-        await api.updateLesson(id, input);
+        await api.createLesson(input);
       }
-    } else {
-      await api.createLesson(input);
+    } catch (e) {
+      const names = overlapNamesFromError(e);
+      if (names !== null) {
+        setOverlapWarning(`${t("lesson.overlap")}: ${names}. ${t("lesson.overlapConfirm")}`);
+        return;
+      }
+      throw e;
     }
 
     for (const s of selectedStudents) {
@@ -957,7 +975,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                   size="sm"
                   variant="outline"
                   className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
-                  onClick={() => void save(pendingScope || undefined)}
+                  onClick={() => void save()}
                 >
                   {t("lesson.saveAnyway")}
                 </Button>
@@ -969,7 +987,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
               )}
               <div className="ml-auto flex gap-2">
                 <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-                <Button onClick={() => void save(pendingScope || undefined)}>{t("lesson.save")}</Button>
+                <Button onClick={() => void save()}>{t("lesson.save")}</Button>
               </div>
             </div>
           </div>
