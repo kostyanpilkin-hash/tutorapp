@@ -31,12 +31,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RecurrenceScopeDialog } from "./RecurrenceScopeDialog";
+import { useRescheduleStore } from "./RescheduleDialog";
 import { PaymentCompleteDialog } from "./PaymentCompleteDialog";
 import { StudentPickerDialog } from "@/components/students/StudentPickerDialog";
 import { StudentAvatar } from "@/components/students/StudentAvatar";
 import { LinkifiedText } from "@/components/LinkifiedText";
 import type { PaymentStatus } from "@/types/lesson";
-import { Bell, Flag, Link2, Repeat, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Bell, CalendarClock, Flag, Link2, Repeat, Users, Wallet, type LucideIcon } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils";
 
@@ -983,7 +984,19 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
             )}
             <div className="flex justify-between gap-2 pt-2">
               {lesson && (
-                <Button variant="destructive" onClick={() => void remove()}>{t("lesson.delete")}</Button>
+                <div className="flex gap-2">
+                  <Button variant="destructive" onClick={() => void remove()}>{t("lesson.delete")}</Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      onClose();
+                      useRescheduleStore.getState().open(lesson);
+                    }}
+                  >
+                    <CalendarClock className="mr-2 h-4 w-4" />
+                    {t("lesson.rescheduleAction")}
+                  </Button>
+                </div>
               )}
               <div className="ml-auto flex gap-2">
                 <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>

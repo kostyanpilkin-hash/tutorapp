@@ -12,10 +12,12 @@ import { useState } from "react";
 import { addDays, format, startOfWeek, isSameDay, type Locale } from "date-fns";
 import { ru, enUS, be as beLocale } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
+import { CalendarClock } from "lucide-react";
 import type { Lesson } from "@/types/lesson";
 import { lessonDisplayColor, lessonStudentNames, lessonStudentNotes, lessonToInput } from "@/types/lesson";
 import { LessonStatusBadges } from "@/components/lesson/LessonStatusBadges";
 import { useLessonContextMenu } from "@/components/lesson/useLessonContextMenu";
+import { useRescheduleStore } from "@/components/lesson/RescheduleDialog";
 import { api } from "@/lib/api";
 import { resolveNewStart } from "@/lib/calendarLayout";
 import { formatTimeInTimezone } from "@/lib/contacts";
@@ -123,6 +125,7 @@ function DraggableLessonCard({
   onContextMenu?: (e: React.MouseEvent, lesson: Lesson) => void;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const start = new Date(lesson.startAt);
   const end = new Date(start.getTime() + lesson.durationMinutes * 60_000);
   const color = lessonDisplayColor(lesson);
@@ -150,7 +153,7 @@ function DraggableLessonCard({
           : `color-mix(in oklab, var(--primary) 20%, var(--card))`,
       }}
       className={cn(
-        "relative w-full overflow-hidden rounded-lg border-2 text-left shadow-sm transition duration-150",
+        "group relative w-full overflow-hidden rounded-lg border-2 text-left shadow-sm transition duration-150",
         compact ? "px-1.5 py-1.5 text-xs" : "px-3 py-2.5 text-sm",
         !color && "border-primary/40",
         isDragging && "z-30 opacity-80 ring-2 ring-primary",
@@ -178,6 +181,21 @@ function DraggableLessonCard({
         </div>
         <LessonStatusBadges lesson={lesson} className="mt-0.5" size={compact ? "sm" : "md"} />
       </div>
+      <span
+        role="button"
+        title={t("lesson.rescheduleAction")}
+        className={cn(
+          "absolute bottom-1 right-1 flex items-center justify-center rounded-md bg-card/80 p-0.5 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100",
+          compact && "bottom-0.5 right-0.5",
+        )}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          useRescheduleStore.getState().open(lesson);
+        }}
+      >
+        <CalendarClock className="h-3.5 w-3.5" />
+      </span>
     </button>
   );
 }

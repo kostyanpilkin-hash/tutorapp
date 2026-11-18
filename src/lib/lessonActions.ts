@@ -33,11 +33,22 @@ export function isLessonUpcoming(lesson: Lesson, now = new Date()): boolean {
   return new Date(lesson.startAt).getTime() > now.getTime() && lesson.status === "scheduled";
 }
 
+/** Кого исключать из overlap-проверки при редактировании/переносе. */
+export function overlapExcludeId(
+  lesson: Lesson,
+  scope?: "this" | "thisAndFuture" | "all",
+): string {
+  if (scope === "all" || scope === "thisAndFuture") return parentLessonId(lesson);
+  return lesson.id;
+}
+
 export async function persistLessonChange(
   lesson: Lesson,
   patch: Partial<LessonInput>,
+  opts?: { force?: boolean },
 ): Promise<Lesson> {
   const base = lessonToInput(lesson);
+  const force = opts?.force ?? false;
   const saved = lesson.id.includes("::")
     ? await api.createLesson({
         ...base,
@@ -45,8 +56,9 @@ export async function persistLessonChange(
         recurrenceRule: null,
         recurrenceParentId: parentLessonId(lesson),
         recurrenceInstanceDate: lesson.recurrenceInstanceDate || lesson.startAt,
+        force,
       })
-    : await api.updateLesson(lesson.id, { ...base, ...patch });
+    : await api.updateLesson(lesson.id, { ...base, ...patch, force });
   await invalidateAppData(queryClient);
   return saved;
 }
@@ -82,8 +94,12 @@ export async function setLessonPaid(lesson: Lesson, paid: boolean): Promise<void
   });
 }
 
-export async function rescheduleLesson(lesson: Lesson, newStart: Date): Promise<void> {
-  await persistLessonChange(lesson, { startAt: newStart.toISOString() });
+export async function rescheduleLesson(
+  lesson: Lesson,
+  newStart: Date,
+  opts?: { force?: boolean },
+): Promise<void> {
+  await persistLessonChange(lesson, { startAt: newStart.toISOString() }, opts);
 }
 
 export async function openLessonLink(lesson: Lesson): Promise<void> {
@@ -157,17 +173,20 @@ export async function deleteLessonInstance(lesson: Lesson): Promise<{ undo: () =
 
 /**
  * Moves a recurring series "this and future": truncates the old series
- * before the clicked instance and creates a new series with the same
- * weekdays at a new time-of-day. Past lessons keep their history.
+ * before the earlier of (clicked instance, new start) and creates a new
+ * series with the same weekdays starting at `newStart` (date AND time may
+ * both change). Past lessons keep their history.
  */
-export async function rescheduleSeriesFromInstance(lesson: Lesson, time: string): Promise<void> {
+export async function rescheduleSeriesFromInstance(
+  lesson: Lesson,
+  newStart: Date,
+  opts?: { force?: boolean },
+): Promise<void> {
   const parentId = parentLessonId(lesson);
   const instanceDate = lesson.recurrenceInstanceDate || lesson.startAt;
   const parent = await api.getLesson(parentId);
 
-  const [hh, mm] = time.split(":").map(Number);
   const slot = new Date(instanceDate);
-  const newStart = new Date(slot.getFullYear(), slot.getMonth(), slot.getDate(), hh, mm, 0, 0);
   if (newStart.getTime() === slot.getTime()) return;
 
   const oldRule = parent.recurrenceRule || WEEKLY_RULE;
@@ -176,13 +195,13 @@ export async function rescheduleSeriesFromInstance(lesson: Lesson, time: string)
     oldCount != null ? countWeeklyOccurrencesFrom(oldRule, new Date(parent.startAt), slot) : null;
 
   if (oldCount != null && (remaining == null || remaining <= 0)) {
-    await rescheduleLesson(lesson, newStart);
+    await rescheduleLesson(lesson, newStart, opts);
     return;
   }
 
   const bydays = parseByday(oldRule);
   const newRule = buildWeeklyRule({
-    bydays: bydays.length > 0 ? bydays : [slot.getDay()],
+    bydays: bydays.length > 0 ? bydays : [newStart.getDay()],
     count: remaining,
     until: remaining == null ? parseUntil(oldRule) : null,
   });
@@ -194,10 +213,11 @@ export async function rescheduleSeriesFromInstance(lesson: Lesson, time: string)
     recurrenceRule: newRule,
     recurrenceParentId: null,
     recurrenceInstanceDate: null,
+    force: opts?.force ?? false,
   });
 
   try {
-    const until = endOfDay(addDays(slot, -1));
+    const until = endOfDay(addDays(slot < newStart ? slot : newStart, -1));
     await api.updateLesson(parentId, { ...input, recurrenceRule: withUntil(oldRule, until) });
     await invalidateAppData(queryClient);
   } catch (e) {

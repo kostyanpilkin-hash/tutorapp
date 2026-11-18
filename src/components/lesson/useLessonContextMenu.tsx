@@ -1,5 +1,5 @@
 import {
-  CalendarPlus,
+  CalendarClock,
   CheckCircle2,
   Copy,
   ExternalLink,
@@ -23,8 +23,7 @@ import {
 import { useToastStore } from "@/stores/toastStore";
 import type { Lesson } from "@/types/lesson";
 import { useContextMenu, type ContextMenuItem } from "@/components/ui/context-menu";
-import { useRescheduleLessonStore } from "@/components/lesson/RescheduleLessonDialog";
-import { useRescheduleSeriesStore } from "@/components/lesson/RescheduleSeriesDialog";
+import { useRescheduleStore } from "@/components/lesson/RescheduleDialog";
 
 interface Options {
   onOpen: (lesson: Lesson) => void;
@@ -141,23 +140,8 @@ export function useLessonContextMenu({ onOpen }: Options) {
       {
         id: "reschedule",
         label: t("lesson.rescheduleAction"),
-        icon: <CalendarPlus className="h-4 w-4" />,
-        children: [
-          {
-            id: "rescheduleThis",
-            label: t("lesson.rescheduleThis"),
-            onSelect: () => useRescheduleLessonStore.getState().open(lesson),
-          },
-          ...(isRecurring
-            ? [
-                {
-                  id: "rescheduleSeries",
-                  label: t("lesson.rescheduleSeries"),
-                  onSelect: () => useRescheduleSeriesStore.getState().open(lesson),
-                },
-              ]
-            : []),
-        ],
+        icon: <CalendarClock className="h-4 w-4" />,
+        onSelect: () => useRescheduleStore.getState().open(lesson),
       },
       {
         id: "delete",

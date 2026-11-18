@@ -16,8 +16,7 @@ import type { CalendarView, Lesson } from "@/types/lesson";
 import { CommandPalette } from "@/components/CommandPalette";
 import { TodayWidget } from "@/components/TodayWidget";
 import { LessonFormDialog } from "@/components/lesson/LessonFormDialog";
-import { RescheduleLessonDialog } from "@/components/lesson/RescheduleLessonDialog";
-import { RescheduleSeriesDialog } from "@/components/lesson/RescheduleSeriesDialog";
+import { RescheduleDialog } from "@/components/lesson/RescheduleDialog";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { WeekView, MonthView } from "@/components/calendar/CalendarViews";
 const FinancePanel = lazy(() =>
@@ -392,8 +391,7 @@ export default function App() {
             });
           }}
         />
-        <RescheduleLessonDialog />
-        <RescheduleSeriesDialog />
+        <RescheduleDialog />
         <CommandPalette
           open={paletteOpen}
           onOpenChange={setPaletteOpen}
