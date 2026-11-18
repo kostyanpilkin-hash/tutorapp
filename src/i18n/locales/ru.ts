@@ -170,6 +170,7 @@ const ru = {
     copy: "Копировать",
     copied: "Скопировано",
   },
+  timePicker: { hours: "Часы", minutes: "Минуты", done: "Готово" },
   status: { scheduled: "Запланировано", completed: "Проведено", cancelled: "Не состоялось", no_show: "Ученик не пришёл" },
   payment: { paid: "Оплачено", unpaid: "Не оплачено" },
   reminder: {

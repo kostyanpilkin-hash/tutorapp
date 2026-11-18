@@ -170,6 +170,7 @@ const en = {
     copy: "Copy",
     copied: "Copied",
   },
+  timePicker: { hours: "Hours", minutes: "Minutes", done: "Done" },
   status: { scheduled: "Scheduled", completed: "Completed", cancelled: "Did not take place", no_show: "Student did not attend" },
   payment: { paid: "Paid", unpaid: "Unpaid" },
   reminder: {

@@ -170,6 +170,7 @@ const be = {
     copy: "Капіяваць",
     copied: "Скапіявана",
   },
+  timePicker: { hours: "Гадзіны", minutes: "Хвіліны", done: "Гатова" },
   status: { scheduled: "Запланавана", completed: "Праведзена", cancelled: "Не адбылося", no_show: "Вучань не прыйшоў" },
   payment: { paid: "Аплачана", unpaid: "Не аплачана" },
   reminder: {
