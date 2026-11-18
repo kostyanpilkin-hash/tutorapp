@@ -15,7 +15,9 @@ pub(crate) use archive::{
     archive_rows, dedupe_all_exception_slots, dedupe_exceptions_for_instance,
 };
 pub use archive::{delete_lesson_series_from_instance, restore_lesson_archive};
-pub(crate) use overlaps::{find_overlaps, overlap_error};
+pub(crate) use overlaps::{
+    exception_row_ids, find_overlaps, find_overlaps_excluding_rows, overlap_error,
+};
 pub use overlaps::check_overlaps;
 pub(crate) use repo::{
     delete_lesson_cascade, insert_reminders, lesson_display_name, lesson_display_names,
@@ -174,7 +176,21 @@ pub fn create_lesson(
                 _ => None,
             };
             let overlaps = state.pool.with_conn(|conn| {
-                find_overlaps(conn, start, input.duration_minutes, exclude.as_deref())
+                // Exclude materialized exception rows for this slot — a second
+                // move of the same slot must not collide with its own row.
+                let extra = match (parent, instance) {
+                    (Some(p), Some(inst)) => {
+                        exception_row_ids(conn, p, inst, crate::occurrences::timezone(conn))?
+                    }
+                    _ => Vec::new(),
+                };
+                find_overlaps_excluding_rows(
+                    conn,
+                    start,
+                    input.duration_minutes,
+                    exclude.as_deref(),
+                    &extra,
+                )
             })?;
             if let Some(err) = overlap_error(&overlaps) {
                 return Err(err);
@@ -1142,6 +1158,46 @@ mod tests {
             None,
         )
         .unwrap();
+        assert!(overlaps.is_empty());
+    }
+
+    #[test]
+    fn exception_row_ids_and_find_overlaps_exclude_slot_rows() {
+        let conn = test_conn();
+        // Weekly series p1 at 18:00; exception row e1 materialized for the Mar 16 slot.
+        insert_lesson_ex(
+            &conn,
+            "p1",
+            "Ivan",
+            "2026-03-09T18:00:00Z",
+            "scheduled",
+            Some("FREQ=WEEKLY"),
+            None,
+            None,
+        );
+        insert_lesson_ex(
+            &conn,
+            "e1",
+            "Ivan",
+            "2026-03-16T18:00:00Z",
+            "scheduled",
+            None,
+            Some("p1"),
+            Some("2026-03-16T18:00:00.000Z"),
+        );
+        let inst = "2026-03-16T18:00:00.000Z";
+        let tz = crate::occurrences::timezone(&conn);
+        let extra = exception_row_ids(&conn, "p1", inst, tz).unwrap();
+        assert_eq!(extra, vec!["e1".to_string()]);
+        // Moving that slot to 17:40: without extra exclusions the check still
+        // reports e1's own row at 18:00 (the bug), with them it is clean.
+        let start: DateTime<Utc> = "2026-03-16T17:40:00Z".parse().unwrap();
+        let exclude = format!("p1::{inst}");
+        let overlaps = find_overlaps(&conn, start, 60, Some(&exclude)).unwrap();
+        assert_eq!(overlaps.len(), 1);
+        assert_eq!(overlaps[0].id, "e1");
+        let overlaps = find_overlaps_excluding_rows(&conn, start, 60, Some(&exclude), &extra)
+            .unwrap();
         assert!(overlaps.is_empty());
     }
 

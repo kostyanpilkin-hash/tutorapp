@@ -38,7 +38,7 @@
 
 **Контекст бага:** `pendingScope` ставится в `RecurrenceScopeDialog.onSelect` (строки ~996-1000) и нигде не сбрасывается; кнопка «Сохранить» вызывает `save(pendingScope || undefined)` — после первого выбора «только это» все серии сохраняются молча с этим скоупом. Компонент смонтирован один раз в `App.tsx` — состояние живёт до перезапуска приложения.
 
-- [ ] **Шаг 1: сброс транзиентного состояния**
+- [x] **Шаг 1: сброс транзиентного состояния**
 
   В `useEffect`, срабатывающем на `open` (тот, что делает `setOverlapWarning(null)` в конце, ~строка 280), добавить:
   ```ts
@@ -48,13 +48,13 @@
   setPickerOpen(false);
   ```
 
-- [ ] **Шаг 2: кнопка «Сохранить» без протекающего скоупа**
+- [x] **Шаг 2: кнопка «Сохранить» без протекающего скоупа**
 
   Кнопка `onClick={() => void save(pendingScope || undefined)}` (~строка 972) → `onClick={() => void save()}`.
   Кнопка «Сохранить всё равно» в overlap-warning (~строка 960) → тоже `save()`.
   `pendingScope` остаётся только мостиком: scope-диалог → payment-prompt → doSave. Убедиться, что `handlePaymentChoice` и `RecurrenceScopeDialog.onSelect` используют `setPendingScope(scope)` + передают scope явно — как сейчас.
 
-- [ ] **Шаг 3: правильная ветка записи для scope="this"**
+- [x] **Шаг 3: правильная ветка записи для scope="this"**
 
   В `doSave`, ветка `scope === "this"` (~строки 396-402): сейчас всегда `api.createLesson({...input, recurrenceParentId: parentId, recurrenceInstanceDate: instanceDate})`. Разделить:
   ```ts
@@ -73,7 +73,7 @@
   }
   ```
 
-- [ ] **Шаг 4: видимость OVERLAP-ошибки**
+- [x] **Шаг 4: видимость OVERLAP-ошибки**
 
   `api.call()` глотает OVERLAP-тосты (`api.ts:33`). В `doSave` обернуть весь блок записи (от `if (lesson) {` до конца `await api.createLesson(input)` ветки else) в `try/catch`:
   ```ts
@@ -88,11 +88,11 @@
   ```
   Импорт `overlapNamesFromError` добавить в существующий импорт `api` (~строка 7).
 
-- [ ] **Шаг 5: проверки**
+- [x] **Шаг 5: проверки**
 
   Run: `npx tsc --noEmit` — чисто. `npm test` — 28/28.
 
-- [ ] **Шаг 6: коммит**
+- [x] **Шаг 6: коммит**
 
   `fix: сброс pendingScope и корректный update exception-строки при "только это занятие"`
 

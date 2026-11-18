@@ -31,11 +31,47 @@ pub(crate) fn overlap_error(overlaps: &[OverlapInfo]) -> Option<String> {
     Some(format!("OVERLAP:{}", names.join(", ")))
 }
 
+/// Row ids of materialized exception rows that claim `parent_id`'s slot on the
+/// local date of `instance_date`. Used to exclude a slot's existing row when
+/// re-creating/rescheduling it (a second move would otherwise collide with
+/// the row it replaces).
+pub(crate) fn exception_row_ids(
+    conn: &Connection,
+    parent_id: &str,
+    instance_date: &str,
+    tz: chrono_tz::Tz,
+) -> Result<Vec<String>, String> {
+    let slot_date = crate::occurrences::parse_any_date(instance_date, tz);
+    let mut stmt = conn
+        .prepare("SELECT id, recurrence_instance_date FROM lessons WHERE recurrence_parent_id = ?1")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([parent_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(rows
+        .filter_map(|r| r.ok())
+        .filter(|(_, d)| crate::occurrences::parse_any_date(d, tz) == slot_date)
+        .map(|(id, _)| id)
+        .collect())
+}
+
 pub(crate) fn find_overlaps(
     conn: &Connection,
     start: DateTime<Utc>,
     duration_minutes: i64,
     exclude_id: Option<&str>,
+) -> Result<Vec<OverlapInfo>, String> {
+    find_overlaps_excluding_rows(conn, start, duration_minutes, exclude_id, &[])
+}
+
+pub(crate) fn find_overlaps_excluding_rows(
+    conn: &Connection,
+    start: DateTime<Utc>,
+    duration_minutes: i64,
+    exclude_id: Option<&str>,
+    extra_exclude_rows: &[String],
 ) -> Result<Vec<OverlapInfo>, String> {
     use crate::recurrence::intervals_overlap;
 
@@ -64,6 +100,9 @@ pub(crate) fn find_overlaps(
             continue;
         }
         if exclude_row == Some(occ.row_id.as_str()) {
+            continue;
+        }
+        if extra_exclude_rows.iter().any(|x| x == &occ.row_id) {
             continue;
         }
         if let Some((pid, inst)) = &exclude_slot {
