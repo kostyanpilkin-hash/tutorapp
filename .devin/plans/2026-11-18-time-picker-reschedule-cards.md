@@ -110,11 +110,11 @@
 
 **Контекст бага:** `create_lesson` при `recurrence_parent_id`+`recurrence_instance_date` проверяет overlaps с `exclude = parent::inst` — это исключает виртуальный слот, но НЕ существующую exception-строку того же слота. Повторный перенос на пересекающееся время → OVERLAP-ошибка. Теперь, когда фронт чинен (Task 1), это defence-in-depth для других вызывающих.
 
-- [ ] **Шаг 1: падающий тест**
+- [x] **Шаг 1: падающий тест**
 
   В модуле тестов `lessons.rs` (по образцу `find_overlaps_excludes_instance_and_slot` ~1097): создать parent-серию `p1` (weekly, старт 18:00), вставить exception-строку `e1` с `recurrence_parent_id='p1'`, `recurrence_instance_date=<inst ISO>`, `start_at=18:00`. Вызвать внутренний путь проверки: `find_overlaps(conn, new_start_17:40, 60, Some("p1::<inst>"))` и отдельно новый helper — убедиться, что тест на исключение `e1` через `exception_row_ids` падает до реализации. Ожидаемый результат после фикса: `[]` (e1 исключена).
 
-- [ ] **Шаг 2: helper в overlaps.rs**
+- [x] **Шаг 2: helper в overlaps.rs**
 
   ```rust
   pub(crate) fn exception_row_ids(
@@ -138,7 +138,7 @@
   }
   ```
 
-- [ ] **Шаг 3: расширенный find_overlaps**
+- [x] **Шаг 3: расширенный find_overlaps**
 
   В `overlaps.rs` добавить внутренний вариант, принимающий набор row-id для исключения:
   ```rust
@@ -152,15 +152,15 @@
   ```
   Тело — как у `find_overlaps`, плюс `if extra_exclude_rows.iter().any(|x| x == &occ.row_id) { continue; }`. `find_overlaps` становится тонким делегатом: `find_overlaps_excluding_rows(conn, start, dur, exclude_id, &[])`.
 
-- [ ] **Шаг 4: вызов в create_lesson**
+- [x] **Шаг 4: вызов в create_lesson**
 
   В `create_lesson` (~строки 167-182): там где `parent.is_none() || moved` и `(Some(p), Some(inst))` — собрать `let extra = exception_row_ids(conn, p, inst, tz)?;` и вызвать `find_overlaps_excluding_rows(conn, start, dur, exclude.as_deref(), &extra)`. `tz` — `crate::occurrences::timezone(conn)`. Вынести проверку в `with_conn` так, чтобы `conn` был доступен для helper (сейчас `find_overlaps` уже вызывается внутри `with_conn` — helper туда же).
 
-- [ ] **Шаг 5: проверки**
+- [x] **Шаг 5: проверки**
 
   Run: `cd src-tauri && cargo test` — все тесты зелёные (53+), включая новый.
 
-- [ ] **Шаг 6: коммит**
+- [x] **Шаг 6: коммит**
 
   `fix: create_lesson исключает exception-строки слота при проверке пересечений`
 
@@ -198,28 +198,28 @@
 - Поведение: выбор часа → авто-переход на минуты; выбор минут → onChange + закрыть? Нет — оставить открытым до «Готово»/outside (чтобы можно было докрутить). При выборе минуты сразу `onChange`.
 - Клавиатура: стрелки в input не обязательны — typing покрывает. `Enter` в панели = «Готово».
 
-- [ ] **Шаг 1: падающие тесты парсера**
+- [x] **Шаг 1: падающие тесты парсера**
 
   `src/lib/timeInput.test.ts`: кейсы `"17:35"→"17:35"`, `"1735"→"17:35"`, `"9:5"→"09:05"`, `"9"→"09:00"`, `"07"→"07:00"`, `"24:00"→null`, `"17:60"→null`, `"ab"→null`, `""→null`, `"17:"→"17:00"`, `" 12 : 30 "`→"12:30"`. Витest — стиль по образцу `src/lib/parity.test.ts`.
 
-- [ ] **Шаг 2: `parseTimeInput` в `src/lib/timeInput.ts`**
+- [x] **Шаг 2: `parseTimeInput` в `src/lib/timeInput.ts`**
 
   Trim → если `HH:MM`/`H:M` → нормализовать в `HH:mm`; если 3-4 цифры подряд → разбить; если 1-2 цифры → `HH:00`. Валидация: `0<=h<24`, `0<=m<60`.
 
-- [ ] **Шаг 3: тесты зелёные**
+- [x] **Шаг 3: тесты зелёные**
 
   `npm test -- timeInput` — все кейсы pass.
 
-- [ ] **Шаг 4: компонент `TimePicker`**
+- [x] **Шаг 4: компонент `TimePicker`**
 
   По спецификации выше. Импорты: `Input` из `@/components/ui/input`, `Button` из `@/components/ui/button`, `Clock`/`ChevronUp`/`ChevronDown` (или `Minus`/`Plus`) из `lucide-react`, `cn` из `@/lib/utils`, `useTranslation` для `timePicker.hours/minutes/done`. Состояние: `open`, `mode: "hours" | "minutes"`, `draft` (сырой текст поля). onBlur поля: `parseTimeInput(draft)` → если валидно `onChange(parsed)`, иначе вернуть `value`.
   Диск: `viewBox` SVG не нужен — div-кружки через абсолютное позиционирование по углу (`transform: rotate/translate`) или простая математика `left/top` по `cos/sin`; 12 кнопок `h-8 w-8 rounded-full` на радиусе.
 
-- [ ] **Шаг 5: i18n ключи**
+- [x] **Шаг 5: i18n ключи**
 
   В `ru.ts`: `timePicker: { hours: "Часы", minutes: "Минуты", done: "Готово" }`; `en.ts`: `"Hours"/"Minutes"/"Done"`; `be.ts`: `"Гадзіны"/"Хвіліны"/"Гатова"`.
 
-- [ ] **Шаг 6: проверки + коммит**
+- [x] **Шаг 6: проверки + коммит**
 
   `npx tsc --noEmit`, `npm test`. Коммит: `feat: TimePicker — поле ввода с циферблатом часов/минут`
 
@@ -258,7 +258,7 @@
 
 **Важно — семантика серийного переноса:** `rescheduleSeriesFromInstance(lesson, time)` принимает только время и двигает с текущего экземпляра. Если пользователь сменил И дату — для серии это «сдвиг серии»: применить `rescheduleSeriesFromInstance` со временем И заодно `withUntil`/новую серию с новой даты — проще: скоуп «это и далее» с датой D и временем T = обрезать старую серию до D и создать новую серию с теми же bydays, стартом D+T. Расширить `rescheduleSeriesFromInstance(lesson, date: Date)` — внутри уже `hh/mm` берутся из даты; сейчас она принимает `time: string` и использует `instanceDate` — поменять сигнатуру на `(lesson, newStart: Date)` (единственный вызывающий — RescheduleSeriesDialog, который удаляется).
 
-- [ ] **Шаг 1: `overlapExcludeId` в lessonActions.ts**
+- [x] **Шаг 1: `overlapExcludeId` в lessonActions.ts**
 
   ```ts
   export function overlapExcludeId(
@@ -271,15 +271,15 @@
   ```
   (Для серийного переноса исключаем всю серию — она режется/пересоздаётся.)
 
-- [ ] **Шаг 2: `persistLessonChange` + force**
+- [x] **Шаг 2: `persistLessonChange` + force**
 
   Сигнатура `(lesson, patch, opts?: { force?: boolean })`; в `LessonInput` проставить `force: opts?.force ?? false`. Все существующие вызовы без изменений.
 
-- [ ] **Шаг 3: `rescheduleSeriesFromInstance(lesson, newStart: Date)`**
+- [x] **Шаг 3: `rescheduleSeriesFromInstance(lesson, newStart: Date)`**
 
   Текущая реализация берёт `hh/mm` из строки и `slot` = instanceDate. Новая: `slot` остаётся instanceDate-числом для обрезки старой серии (`until = endOfDay(addDays(slot, -1))` — если дата изменилась, обрезать до новой даты-1? Нет: серия режется «с экземпляра X», а НОВАЯ серия стартует `newStart`. Если `newStart` раньше экземпляра — обрезать до `newStart - 1 день`? Проще и корректно: новая серия начинается с `newStart`; старая обрезается `until = min(instanceDate, newStart) - 1 day` — брать `endOfDay(addDays(min(slot, newStart), -1))`.) Остальная логика (count/remaining/bydays) — без изменений, `newStart.toISOString()` в `createLesson`.
 
-- [ ] **Шаг 4: `RescheduleDialog`**
+- [x] **Шаг 4: `RescheduleDialog`**
 
   Стор + разметка по спецификации выше. `save()`:
   ```ts
@@ -292,7 +292,7 @@
   ```
   OVERLAP-ошибку от бэкенда ловить → warning-бар (не молчать). Успех → `useToastStore.getState().success(t("lesson.movedToast"))` + close.
 
-- [ ] **Шаг 5: проводка**
+- [x] **Шаг 5: проводка**
 
   - `useLessonContextMenu`: два пункта «Перенести»/«Перенести серию» заменить одним «Перенести…» → `useRescheduleStore.getState().open(lesson)` (подменю убрать; пункт не submenu, прямой).
   - `App.tsx`: `<RescheduleLessonDialog />` + `<RescheduleSeriesDialog />` → `<RescheduleDialog />` (+ импорт).
@@ -300,11 +300,11 @@
   - `LessonFormDialog` футер: между «Удалить» и «Отмена/Сохранить» кнопка `variant="outline"` «Перенести» (`CalendarClock` icon) → `onClose()` + `useRescheduleStore.getState().open(lesson)` (только когда `lesson` существует; в new-режиме не показывать).
   - `CalendarViews` `DraggableLessonCard`: при hover — маленькая иконка `CalendarClock` в углу карточки (`opacity-0 group-hover:opacity-100`), `onClick` → `e.stopPropagation()` + `useRescheduleStore.getState().open(lesson)`; `title={t("lesson.rescheduleAction")}`.
 
-- [ ] **Шаг 6: i18n**
+- [x] **Шаг 6: i18n**
 
   Проверить существующие ключи `lesson.reschedule*`, при необходимости добавить `lesson.rescheduleScopeThis`/`rescheduleScopeSeries` подписи и `lesson.rescheduleHint`. Удалить `rescheduleNoSlots`/`rescheduleAvailableTime` если больше не используются — НЕ удалять (могут использоваться телеграм-ботом/phone — проверить grep, если только диалог — удалить).
 
-- [ ] **Шаг 7: проверки + коммит**
+- [x] **Шаг 7: проверки + коммит**
 
   `npx tsc --noEmit`, `npm test`. Коммит: `feat: единый диалог переноса — произвольное время, скоуп серии, кнопки в форме и на карточках`
 

@@ -143,6 +143,7 @@ const be = {
     sectionWho: "Хто і калі",
     sectionLinks: "Спасылкі і нататкі",
     sectionStatus: "Статус і аплата",
+    tabMain: "Асноўнае",
     statusChip: { scheduled: "Заплан.", completed: "Праведз.", cancelled: "Не адбыл.", no_show: "Не прыйш." },
     deletedToast: "Занятак выдалены",
     movedToast: "Занятак перанесены",

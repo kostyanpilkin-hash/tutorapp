@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
+import { TimePicker } from "@/components/ui/time-picker";
 import { Label, Textarea } from "@/components/ui/label";
 import {
   Select,
@@ -687,13 +688,13 @@ export function SettingsPanel() {
           <div className="flex items-center justify-between py-0.5">
             <span className="text-sm">{t("settings.tgDigest")}</span>
             <div className="flex items-center gap-2">
-              <Input
-                type="time"
-                className="w-24"
-                value={tgPrefs.digest_time || "09:00"}
-                disabled={tgPrefs.digest_time === ""}
-                onChange={(e) => void saveTgPref("tg_digest_time", e.target.value)}
-              />
+              <div className="w-28">
+                <TimePicker
+                  value={tgPrefs.digest_time || "09:00"}
+                  disabled={tgPrefs.digest_time === ""}
+                  onChange={(v) => void saveTgPref("tg_digest_time", v)}
+                />
+              </div>
               <Switch
                 checked={tgPrefs.digest_time !== ""}
                 onCheckedChange={(v) => void saveTgPref("tg_digest_time", v ? "09:00" : "")}

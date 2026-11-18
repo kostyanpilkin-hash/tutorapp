@@ -143,6 +143,7 @@ const en = {
     sectionWho: "Who & when",
     sectionLinks: "Links & notes",
     sectionStatus: "Status & payment",
+    tabMain: "Main",
     statusChip: { scheduled: "Sched.", completed: "Done", cancelled: "Cancelled", no_show: "No-show" },
     deletedToast: "Lesson deleted",
     movedToast: "Lesson moved",

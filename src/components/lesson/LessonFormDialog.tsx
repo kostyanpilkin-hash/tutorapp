@@ -24,6 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TimePicker } from "@/components/ui/time-picker";
 import {
   Dialog,
   DialogContent,
@@ -575,11 +577,27 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
         if (!v && !pickerOpen && !paymentPromptOpen && !scopeOpen) onClose();
       }}>
         <DialogContent className="max-h-[90vh] max-w-xl overflow-hidden p-0">
-          <div className="relative max-h-[90vh] overflow-y-auto p-6">
+          <div className="relative flex max-h-[90vh] flex-col">
+          <div className="overflow-y-auto p-6 pb-4">
           <DialogHeader>
             <DialogTitle>{lesson ? t("lesson.edit") : t("lesson.new")}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-3">
+          {timezoneHints.length > 0 && (
+            <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/50 p-2 text-sm dark:bg-blue-950/20">
+              {timezoneHints.map((h) => (
+                <p key={h.name}>
+                  {t("lesson.studentTime", { name: h.name, time: h.time, tz: h.tz })}
+                </p>
+              ))}
+            </div>
+          )}
+          <Tabs defaultValue="main" className="mt-3">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="main">{t("lesson.tabMain")}</TabsTrigger>
+              <TabsTrigger value="links">{t("lesson.sectionLinks")}</TabsTrigger>
+              <TabsTrigger value="reminders">{t("lesson.reminders")}</TabsTrigger>
+            </TabsList>
+            <TabsContent value="main" className="grid gap-3">
             <FormSection icon={Users} title={t("lesson.sectionWho")}>
               <div>
                 <Label>{t("lesson.student")}</Label>
@@ -616,16 +634,6 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                 )}
               </div>
 
-              {timezoneHints.length > 0 && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2 text-sm dark:bg-blue-950/20">
-                  {timezoneHints.map((h) => (
-                    <p key={h.name}>
-                      {t("lesson.studentTime", { name: h.name, time: h.time, tz: h.tz })}
-                    </p>
-                  ))}
-                </div>
-              )}
-
               <div>
                 <Label>{t("lesson.subject")}</Label>
                 <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
@@ -637,7 +645,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                 </div>
                 <div>
                   <Label>{t("lesson.time")}</Label>
-                  <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+                  <TimePicker value={time} onChange={setTime} />
                 </div>
                 <div>
                   <Label>{t("lesson.duration")}</Label>
@@ -813,6 +821,60 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
               )}
             </FormSection>
 
+            <FormSection icon={Flag} title={t("lesson.sectionStatus")}>
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{t("lesson.status")}</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {STATUS_OPTIONS.map((opt) => {
+                    const active = status === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        title={t(`status.${opt.value}`)}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          active
+                            ? opt.active
+                            : "border-border bg-card text-muted-foreground hover:bg-muted",
+                        )}
+                        onClick={() => setStatus(opt.value)}
+                      >
+                        {t(`lesson.statusChip.${opt.value}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <Label className="mb-1.5 block text-xs text-muted-foreground">{t("finance.payment")}</Label>
+                <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
+                  {(["unpaid", "paid"] as const).map((v) => {
+                    const active = paymentStatus === v;
+                    return (
+                      <button
+                        key={v}
+                        type="button"
+                        className={cn(
+                          "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+                          active
+                            ? v === "paid"
+                              ? "bg-green-600 text-white"
+                              : "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => setPaymentStatus(v)}
+                      >
+                        {t(v === "paid" ? "finance.paid" : "finance.unpaid")}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </FormSection>
+            </TabsContent>
+
+            <TabsContent value="links" className="grid gap-3">
             <FormSection icon={Link2} title={t("lesson.sectionLinks")}>
               <div>
                 <Label>{t("lesson.link")}</Label>
@@ -895,6 +957,9 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
               </div>
             </FormSection>
 
+            </TabsContent>
+
+            <TabsContent value="reminders" className="grid gap-3">
             <FormSection icon={Bell} title={t("lesson.reminders")}>
               <div className="flex flex-wrap gap-1.5">
                 {reminderOptions.map((o) => {
@@ -918,57 +983,10 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
               </div>
             </FormSection>
 
-            <FormSection icon={Flag} title={t("lesson.sectionStatus")}>
-              <div>
-                <Label className="mb-1.5 block text-xs text-muted-foreground">{t("lesson.status")}</Label>
-                <div className="flex flex-wrap gap-1.5">
-                  {STATUS_OPTIONS.map((opt) => {
-                    const active = status === opt.value;
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        title={t(`status.${opt.value}`)}
-                        className={cn(
-                          "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                          active
-                            ? opt.active
-                            : "border-border bg-card text-muted-foreground hover:bg-muted",
-                        )}
-                        onClick={() => setStatus(opt.value)}
-                      >
-                        {t(`lesson.statusChip.${opt.value}`)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs text-muted-foreground">{t("finance.payment")}</Label>
-                <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5">
-                  {(["unpaid", "paid"] as const).map((v) => {
-                    const active = paymentStatus === v;
-                    return (
-                      <button
-                        key={v}
-                        type="button"
-                        className={cn(
-                          "rounded-md px-3 py-1 text-xs font-medium transition-colors",
-                          active
-                            ? v === "paid"
-                              ? "bg-green-600 text-white"
-                              : "bg-card text-foreground shadow-sm"
-                            : "text-muted-foreground hover:text-foreground",
-                        )}
-                        onClick={() => setPaymentStatus(v)}
-                      >
-                        {t(v === "paid" ? "finance.paid" : "finance.unpaid")}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </FormSection>
+            </TabsContent>
+          </Tabs>
+          </div>
+          <div className="border-t px-6 py-3">
             {overlapWarning && (
               <div className="space-y-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800">
                 <p>{overlapWarning}</p>

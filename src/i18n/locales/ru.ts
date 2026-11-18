@@ -143,6 +143,7 @@ const ru = {
     sectionWho: "Кто и когда",
     sectionLinks: "Ссылки и заметки",
     sectionStatus: "Статус и оплата",
+    tabMain: "Основное",
     statusChip: { scheduled: "Заплан.", completed: "Провед.", cancelled: "Не сост.", no_show: "Не пришёл" },
     deletedToast: "Занятие удалено",
     movedToast: "Занятие перенесено",
