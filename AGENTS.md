@@ -39,7 +39,13 @@
 - MSYS path conversion: в git-bash аргумент `/S` превращается в путь `S:/` — установщик запускается НЕ тихо и висит с невидимым окном «TutorApp Setup» навсегда. Запускать `MSYS_NO_PATHCONV=1 "...setup.exe" /S` (или `cmd //c`). Если окно висело — убить setup-процесс и перезапустить правильно.
 - Длинные логи (сборка, npm): вывод в файл или `| tail -N` — не втягивать весь лог в контекст.
 - Shell — git-bash: `tail`/`head`/`ls`/`tasklist` в bash-форме, не PowerShell-командлеты.
-- Скиллы: `.devin/skills/` — `release` (пайплайн релиза), `parity` (паритет развёртки), `verify` (быстрые проверки), `db-inspect` (запросы к реальной БД через node:sqlite).
+
+## Скиллы
+
+- Проектные: `.devin/skills/` — `release` (пайплайн релиза), `parity` (паритет развёртки), `verify` (быстрые проверки), `db-inspect` (запросы к реальной БД через node:sqlite).
+- Глобальные (доступны в любой сессии этого репо): `~/.agents/skills/` — brainstorming, grill-me/grilling, writing-plans, codebase-design, domain-modeling, systematic-debugging, verification-before-completion, improve-codebase-architecture, handoff, agent-browser, ui-ux-pro-max, frontend-design, design-taste-frontend, impeccable, shadcn, code-review, webapp-testing, find-skills, skill-creator, theme-factory, docx, pdf, xlsx; `%APPDATA%\devin\skills\` — automate, autopilot, canvas, create-hook/rule/skill/subagent, deploy-with-vercel, goal, loop, migrate-to-skills, new-repo, onboard, origin, rename-chat, review, review-bugbot, review-security, sdk, share, shell, split-to-prs, statusline, update-cli-config, update-cursor-settings.
+- Если просят вызвать скилл, которого нет в списке доступных — сначала проверить директории `~/.agents/skills/` и `%APPDATA%\devin\skills/` на диске (там могут быть свежеустановленные или только что разблокированные скиллы), а уже потом говорить, что его нет. Установка недостающих: `npx skills add <owner/repo> -g -s <имя> -y --copy`.
+- Скилл, ссылающийся на другой скилл (`Call the Skill tool with "X"`): если X отсутствует — это не значит, что первый скилл «пустой»; доустановить зависимость.
 
 ## Особенности
 
