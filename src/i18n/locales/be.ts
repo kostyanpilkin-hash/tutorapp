@@ -544,6 +544,7 @@ const be = {
     sendToMessenger: "Адкрыць месенджар",
     templateCopied: "Тэкст паведамлення скапіяваны",
     contacts: "Кантакты",
+    tabLessons: "Заняткі",
     nextLessonAt: "Наст. занятак: {{time}}",
     prepaidBadge: "Перадплата: {{count}}",
     call: "Патэлефанаваць",

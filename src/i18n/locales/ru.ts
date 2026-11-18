@@ -544,6 +544,7 @@ const ru = {
     sendToMessenger: "Открыть мессенджер",
     templateCopied: "Текст сообщения скопирован",
     contacts: "Контакты",
+    tabLessons: "Занятия",
     nextLessonAt: "След. занятие: {{time}}",
     prepaidBadge: "Предоплата: {{count}}",
     call: "Позвонить",

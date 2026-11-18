@@ -544,6 +544,7 @@ const en = {
     sendToMessenger: "Open messenger",
     templateCopied: "Message text copied",
     contacts: "Contacts",
+    tabLessons: "Lessons",
     nextLessonAt: "Next lesson: {{time}}",
     prepaidBadge: "Prepaid: {{count}}",
     call: "Call",

@@ -28,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 const COLORS = [
@@ -281,15 +282,23 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
         className={cn(
-          "max-h-[90vh] max-w-lg overflow-y-auto",
+          "max-h-[90vh] max-w-lg overflow-hidden p-0",
           elevated && "z-[120]",
         )}
         overlayClassName={elevated ? "z-[115]" : undefined}
       >
+        <div className="flex max-h-[90vh] flex-col">
+        <div className="overflow-y-auto p-6 pb-4">
         <DialogHeader>
           <DialogTitle>{student ? t("students.edit") : t("students.new")}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3">
+        <Tabs defaultValue="contacts" className="mt-3">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="contacts">{t("students.contacts")}</TabsTrigger>
+            <TabsTrigger value="lessons">{t("students.tabLessons")}</TabsTrigger>
+            <TabsTrigger value="notes">{t("students.notes")}</TabsTrigger>
+          </TabsList>
+          <TabsContent value="contacts" className="grid gap-3">
           {studentId && (
             <div className="flex items-center gap-3">
               <StudentAvatar
@@ -362,6 +371,9 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
             <Label>{t("students.birthDate")}</Label>
             <Input type="date" value={form.birthDate || ""} onChange={(e) => set("birthDate", e.target.value || null)} />
           </div>
+          </TabsContent>
+
+          <TabsContent value="lessons" className="grid gap-3">
           <div>
             <Label>{t("students.timezone")}</Label>
             <Select
@@ -450,6 +462,9 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
               ))}
             </div>
           </div>
+          </TabsContent>
+
+          <TabsContent value="notes" className="grid gap-3">
           <div>
             <Label>{t("students.notes")}</Label>
             <p className="mb-1 text-xs text-muted-foreground">{t("students.lessonNoteHint")}</p>
@@ -458,12 +473,17 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
               <LinkifiedText className="mt-1.5 text-sm" text={form.notes} />
             )}
           </div>
-          <div className="flex justify-end gap-2 pt-2">
+          </TabsContent>
+        </Tabs>
+        </div>
+        <div className="border-t px-6 py-3">
+          <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={onClose}>{t("students.cancel")}</Button>
             <Button disabled={saving || !form.name.trim()} onClick={() => void save()}>
               {t("students.save")}
             </Button>
           </div>
+        </div>
         </div>
       </DialogContent>
     </Dialog>
