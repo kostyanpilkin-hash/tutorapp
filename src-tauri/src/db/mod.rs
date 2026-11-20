@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod migrations;
 pub mod pool;
 
@@ -25,20 +26,24 @@ pub fn db_path() -> PathBuf {
     app_data_dir().join("tutor.db")
 }
 
-pub fn backup_db(path: &Path) {
-    let backup = path.with_extension("db.bak");
-    if path.exists() {
-        let _ = fs::copy(path, backup);
+/// Startup snapshot `tutor.db.bak`, taken before migrations run. On failure
+/// the previous `.bak` stays as is.
+fn startup_snapshot(conn: &Connection, path: &Path) {
+    if let Err(e) = backup::create_snapshot(conn, &path.with_extension("db.bak")) {
+        eprintln!("Startup snapshot failed: {e}");
     }
 }
 
 pub fn init_db() -> Result<AppState, String> {
     let path = db_path();
-    backup_db(&path);
+    let existed = path.exists();
 
     let conn = Connection::open(&path).map_err(|e| e.to_string())?;
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA cache_size=-20000;")
         .map_err(|e| e.to_string())?;
+    if existed {
+        startup_snapshot(&conn, &path);
+    }
     migrations::run(&conn)?;
     // Diagnostics only: duplicate/invalid exception slots are reported, never
     // deleted on startup (destructive cleanup needs a snapshot + migration).

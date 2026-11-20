@@ -52,7 +52,6 @@ pub fn get_db_path(state: tauri::State<AppState>) -> Result<String, String> {
 #[tauri::command]
 pub fn backup_database(state: tauri::State<AppState>) -> Result<Option<String>, String> {
     use chrono::Local;
-    use std::fs;
     use std::path::PathBuf;
 
     let src = &state.db_path;
@@ -77,12 +76,8 @@ pub fn backup_database(state: tauri::State<AppState>) -> Result<Option<String>, 
         return Ok(None);
     };
 
-    // Checkpoint WAL so backup is consistent
-    let _ = state.pool.with_conn(|conn| {
-        let _ = conn.execute_batch("PRAGMA wal_checkpoint(FULL);");
-        Ok(())
-    });
-
-    fs::copy(src, &path).map_err(|e| e.to_string())?;
-    Ok(Some(path.to_string_lossy().to_string()))
+    let receipt = state
+        .pool
+        .with_conn(|conn| crate::db::backup::create_snapshot(conn, &path))?;
+    Ok(Some(receipt.path.to_string_lossy().to_string()))
 }

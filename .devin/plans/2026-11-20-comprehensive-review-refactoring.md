@@ -359,11 +359,11 @@ API кодирует overlap префиксом строки и глобальн
 **Files:** новый `db/backup.rs`; db/mod.rs, pool.rs, migrations.rs, settings.rs, lib.rs, Cargo.toml (feature backup той же версии rusqlite).
 **Interfaces:** `create_snapshot(source: &Connection, destination: &Path) -> Result<BackupReceipt, DomainError>` использует SQLite online backup; receipt — путь, schema version, integrity result. `open_connection(path, purpose)` одинаково применяет foreign_keys, busy timeout и journal policy.
 
-- [ ] Добавление feature `backup` не меняет версию rusqlite без причины. Сверить API с документацией закреплённой версии.
-- [ ] Tests WAL с committed записью без checkpoint, активный второй writer, locked/busy, недоступный destination, backup-to-source rejection. Snapshot после открытия проходит integrity_check и содержит committed fixture rows.
-- [ ] Убрать fs::copy live main db и игнорирование checkpoint errors. Destination создаётся временно рядом, финальное имя появляется после успеха. Ошибка не затирает последнюю хорошую копию.
-- [ ] Миграции версионированы, transactional где SQLite позволяет; создание snapshot до первой destructive migration. Rollback — восстановление всей согласованной версии при закрытых writers, не ручной откат отдельных таблиц.
-- [ ] Single-instance решение до изменяющего init, проверить повторный запуск не делает cleanup/migrations/backup поверх активного процесса. Native smoke обязателен.
+- [x] Добавление feature `backup` не меняет версию rusqlite без причины (0.32.1, Cargo.lock без изменений). API сверен с docs.rs 0.32.1; используется `backup::Backup::step` с ограниченными повторами, т.к. `Connection::backup` при Busy/Locked ждёт бесконечно.
+- [x] Tests WAL с committed записью без checkpoint (`plain_file_copy_misses_wal_but_snapshot_does_not` — fs::copy теряет строку, snapshot нет), второй writer, чужой открытый write-lock (незакоммиченное не попадает), недоступный destination, backup-to-source rejection, повторный snapshot. Snapshot проходит integrity_check и содержит committed rows; копия — один файл (journal_mode=DELETE).
+- [x] Убрать fs::copy live main db и игнорирование checkpoint errors. Destination создаётся временно рядом, финальное имя появляется после успеха. Ошибка не затирает последнюю хорошую копию (`failure_keeps_last_good_copy`). Startup `.bak` и ручной «Резервная копия» — оба через `db::backup::create_snapshot`.
+- [ ] Миграции версионированы, transactional где SQLite позволяет; создание snapshot до первой destructive migration. — Startup snapshot теперь идёт до `migrations::run`. Версионирования миграций (`user_version`) пока нет. Destructive-миграция очистки дублей НЕ реализована: dry-run на копии реальной БД нашёл Nгрупп дублей / 11 лишних строк (одна локальная дата, разные instant) — ждёт решения пользователя.
+- [ ] Single-instance решение до изменяющего init. — Не сделано: перенос `init_db` в `setup` меняет порядок создания окна/State и без native smoke непроверяем. Риск снижен: второй экземпляр теперь делает консистентный snapshot, миграции идемпотентны, деструктивной очистки на старте нет.
 **Commit:** `fix: create consistent SQLite snapshots before migrations`.
 
 ### Task 10. Уменьшить renderer-доступ к данным и секретам (F08)
