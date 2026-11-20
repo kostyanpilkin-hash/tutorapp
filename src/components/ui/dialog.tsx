@@ -1,5 +1,6 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { shouldBlockDialogDismiss } from "./select";
 
@@ -19,6 +20,7 @@ export function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   overlayClassName?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className={cn("fixed inset-0 z-50 bg-black/50", overlayClassName)} />
@@ -41,12 +43,17 @@ export function DialogContent({
         }}
         onEscapeKeyDown={(e) => {
           if (shouldBlockDialogDismiss()) e.preventDefault();
+          // A nested disclosure (e.g. the time picker clock) owns this Escape.
+          if (e.target instanceof Element && e.target.closest("[data-dismiss-guard]")) e.preventDefault();
           onEscapeKeyDown?.(e);
         }}
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100">
+        <DialogPrimitive.Close
+          aria-label={t("common.close")}
+          className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
           <X className="h-4 w-4" />
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>

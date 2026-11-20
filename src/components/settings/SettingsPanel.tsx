@@ -203,6 +203,7 @@ export function SettingsPanel() {
     queryKey: keys.tg.prefs(),
     queryFn: () => api.tgPreferences(),
   });
+  const [digestPanelHost, setDigestPanelHost] = useState<HTMLDivElement | null>(null);
   const tgPrefs = tgPrefsQuery.data ?? {
     offsets: [60],
     fields: ["student", "time", "link", "subject"],
@@ -686,13 +687,15 @@ export function SettingsPanel() {
         {tgError && <p className="text-xs text-red-500">{tgError}</p>}
         <div className="border-t border-border pt-2.5 space-y-1.5">
           <div className="flex items-center justify-between py-0.5">
-            <span className="text-sm">{t("settings.tgDigest")}</span>
+            <label htmlFor="tg-digest-time" className="text-sm">{t("settings.tgDigest")}</label>
             <div className="flex items-center gap-2">
               <div className="w-28">
                 <TimePicker
+                  id="tg-digest-time"
                   value={tgPrefs.digest_time || "09:00"}
                   disabled={tgPrefs.digest_time === ""}
                   onChange={(v) => void saveTgPref("tg_digest_time", v)}
+                  panelHost={digestPanelHost}
                 />
               </div>
               <Switch
@@ -701,6 +704,7 @@ export function SettingsPanel() {
               />
             </div>
           </div>
+          <div ref={setDigestPanelHost} className="flex justify-end empty:hidden" />
           <div className="flex items-center justify-between py-0.5">
             <span className="text-sm">{t("settings.tgQuiet")}</span>
             <div className="flex items-center gap-1.5">

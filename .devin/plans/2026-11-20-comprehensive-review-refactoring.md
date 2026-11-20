@@ -307,11 +307,11 @@ API кодирует overlap префиксом строки и глобальн
 **Files:** `ui/time-picker.tsx`, `ui/dialog.tsx`, LessonFormDialog, RescheduleDialog, StudentFormDialog, CalendarViews, ru/en/be, UI regression tests.
 **Interfaces:** `TimePickerProps` дополнить `invalid?: boolean`, `describedBy?: string`, `onValidityChange?: (valid: boolean) => void`; controlled value остаётся HH:mm, невалидный raw draft не превращается в старое валидное значение без сообщения.
 
-- [ ] На baseline закрепить browser tests `time_picker_done_is_clickable_at_900x600`, `...1280x800`; hit-test должен быть false до исправления и true после.
-- [ ] Сделать in-flow disclosure. Панель 24h с доступными targets, selected state; не использовать абсолютный popover внутри обрезаемого scroll body. При потребности в portal сначала протестировать focus scope, новую зависимость отдельно согласовать.
-- [ ] Clock reachable by Tab; first Escape закрывает только панель, focus возвращается в trigger. Все inputs с label association, ошибки описаны через aria-describedby; Close локализован.
-- [ ] Calendar action вынести из интерактивного родителя; radio scope сделать семантическим. Активная вкладка с ошибкой открывается по Save; required поля не теряются после tab switch.
-- [ ] UI tests: enter 17:40, 23:50+30min→+1day; invalid 24:10 сохраняет текст и блокирует save; keyboard-only create/edit; touch emulation; light/dark, 900×600, 1280×800. Не объявлять WCAG AA по одному автоматическому скану.
+- [x] На baseline закрепить browser tests (harness `%TEMP%/tutor-timepicker-check.py`, mock IPC, не в репо — UI runner не утверждён): baseline doneHit false (y=695 / 705), Tab не доходит до часов, dial gap −6px, нет selected state, первый Escape закрывал всю форму; после — doneHit true во всех 4 комбинациях.
+- [x] Сделать in-flow disclosure. Панель через `panelHost` (portal в строку внутри того же DialogContent, т.е. в focus scope) или сразу под input; без absolute. Dial 248px, кольца 104/68, targets 32px, min gap 3px. Без новых зависимостей.
+- [x] Clock reachable by Tab; first Escape закрывает только панель (`data-dismiss-guard` + проверка в `DialogContent.onEscapeKeyDown`, т.к. Radix слушает Escape в capture), focus возвращается в trigger. Все inputs основной вкладки с label association (harness: 0 без имени), ошибка через aria-describedby; Close локализован.
+- [~] Calendar action вынесен из интерактивного родителя (0 вложенных, Tab+Enter, видим при focus и `hover:none`); scope переноса — `aria-pressed`. Не сделано: открытие вкладки с ошибкой по Save (Task 4).
+- [~] UI tests: 17:40, 23:50→+1 день, 24:10 сохраняет текст + aria-invalid + Save disabled, Escape×2, light/dark × 900×600/1280×800 — pass; перенос 900×600 light/dark — pass. Не проверено: touch emulation, Telegram-дайджест в Настройках визуально (нужно подключённое состояние), WebView2/WKWebView native. WCAG AA не заявляется.
 **Commit:** `fix: make time selection and lesson forms accessible`.
 
 ### Task 6. Одна атомарная операция split/move серии (F01, F02, F11, F15)

@@ -166,8 +166,9 @@ const ru = {
     cancel: "Отмена",
     copy: "Копировать",
     copied: "Скопировано",
+    close: "Закрыть",
   },
-  timePicker: { hours: "Часы", minutes: "Минуты", done: "Готово" },
+  timePicker: { hours: "Часы", minutes: "Минуты", done: "Готово", open: "Выбрать время", invalid: "Введите время ЧЧ:ММ от 00:00 до 23:59", nextDay: "+1 день" },
   status: { scheduled: "Запланировано", completed: "Проведено", cancelled: "Не состоялось", no_show: "Ученик не пришёл" },
   payment: { paid: "Оплачено", unpaid: "Не оплачено" },
   reminder: {

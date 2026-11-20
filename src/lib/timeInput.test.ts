@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTimeInput } from "./timeInput";
+import { lessonEnd, parseTimeInput } from "./timeInput";
 
 describe("parseTimeInput", () => {
   it("passes through well-formed HH:mm", () => {
@@ -38,5 +38,21 @@ describe("parseTimeInput", () => {
     expect(parseTimeInput(":")).toBeNull();
     expect(parseTimeInput(":30")).toBeNull();
     expect(parseTimeInput("1:2:3")).toBeNull();
+  });
+});
+
+describe("lessonEnd", () => {
+  it("adds duration on the same day", () => {
+    expect(lessonEnd("17:40", 60)).toEqual({ end: "18:40", dayOffset: 0 });
+  });
+  it("marks a lesson that crosses midnight", () => {
+    expect(lessonEnd("23:50", 30)).toEqual({ end: "00:20", dayOffset: 1 });
+  });
+  it("ending exactly at midnight is the next day 00:00", () => {
+    expect(lessonEnd("23:00", 60)).toEqual({ end: "00:00", dayOffset: 1 });
+  });
+  it("rejects invalid input instead of guessing", () => {
+    expect(lessonEnd("24:10", 60)).toBeNull();
+    expect(lessonEnd("10:00", 0)).toBeNull();
   });
 });

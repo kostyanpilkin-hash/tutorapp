@@ -10,6 +10,7 @@ import { formatTimeInTimezone } from "@/lib/contacts";
 import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, withUntil, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
 import { hrefFor, textHasLinks } from "@/lib/linkify";
 import { buildParticipantInputs, templateParticipants } from "@/lib/lessonMutation";
+import { lessonEnd } from "@/lib/timeInput";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { keys, invalidateAppData } from "@/lib/queryKeys";
 import { useShallow } from "zustand/react/shallow";
@@ -152,14 +153,13 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
     return options.sort((a, b) => b.value - a.value);
   }, [reminderMins, t]);
 
+  const [timePanelHost, setTimePanelHost] = useState<HTMLDivElement | null>(null);
+  const [timeValid, setTimeValid] = useState(true);
   const endTimeLabel = useMemo(() => {
-    if (!time || !duration || duration <= 0) return "";
-    const [h, m] = time.split(":").map(Number);
-    if (Number.isNaN(h) || Number.isNaN(m)) return "";
-    const d = new Date();
-    d.setHours(h, m + duration, 0, 0);
-    return format(d, "HH:mm");
-  }, [time, duration]);
+    const end = lessonEnd(time, duration);
+    if (!end) return "";
+    return end.dayOffset > 0 ? `${end.end} (${t("timePicker.nextDay")})` : end.end;
+  }, [time, duration, t]);
 
   const toggleReminder = (mins: number) => {
     setReminderMins((prev) =>
@@ -282,6 +282,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       setReminderMins([...new Set(sorted)]);
     }
     setOverlapWarning(null);
+    setTimeValid(true);
     setPendingScope(null);
     setScopeOpen(false);
     setPaymentPromptOpen(false);
@@ -480,6 +481,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
   };
 
   const save = async (scope?: RecurrenceEditScope) => {
+    if (!timeValid) return;
     const becomingCompleted = status === "completed" && lesson?.status !== "completed";
     const hasBillableCost = Number(cost) > 0 || Object.values(studentCosts).some((item) => Number(item.cost) > 0);
     if (becomingCompleted && hasBillableCost && paymentStatus === "unpaid") {
@@ -630,27 +632,35 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
               </div>
 
               <div>
-                <Label>{t("lesson.subject")}</Label>
-                <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+                <Label htmlFor="lesson-subject">{t("lesson.subject")}</Label>
+                <Input id="lesson-subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <Label>{t("lesson.date")}</Label>
-                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                  <Label htmlFor="lesson-date">{t("lesson.date")}</Label>
+                  <Input id="lesson-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
                 </div>
                 <div>
-                  <Label>{t("lesson.time")}</Label>
-                  <TimePicker value={time} onChange={setTime} />
+                  <Label htmlFor="lesson-time">{t("lesson.time")}</Label>
+                  <TimePicker
+                    id="lesson-time"
+                    value={time}
+                    onChange={setTime}
+                    panelHost={timePanelHost}
+                    describedBy={endTimeLabel ? "lesson-end-time" : undefined}
+                    onValidityChange={setTimeValid}
+                  />
                 </div>
                 <div>
-                  <Label>{t("lesson.duration")}</Label>
-                  <Input type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
+                  <Label htmlFor="lesson-duration">{t("lesson.duration")}</Label>
+                  <Input id="lesson-duration" type="number" value={duration} onChange={(e) => setDuration(Number(e.target.value))} />
                   {endTimeLabel && (
-                    <p className="mt-1 text-xs text-muted-foreground">
+                    <p id="lesson-end-time" className="mt-1 text-xs tabular-nums text-muted-foreground">
                       {time} → {endTimeLabel}
                     </p>
                   )}
                 </div>
+                <div ref={setTimePanelHost} className="col-span-3 empty:hidden" />
               </div>
             </FormSection>
 
@@ -723,8 +733,9 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                   </div>
                   {recurrenceEnd === "until" && (
                     <div>
-                      <Label className="text-xs text-muted-foreground">{t("lesson.untilDate")}</Label>
+                      <Label htmlFor="lesson-until" className="text-xs text-muted-foreground">{t("lesson.untilDate")}</Label>
                       <Input
+                        id="lesson-until"
                         type="date"
                         value={recurrenceUntil}
                         onChange={(e) => setRecurrenceUntil(e.target.value)}
@@ -733,8 +744,9 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                   )}
                   {recurrenceEnd === "count" && (
                     <div>
-                      <Label className="text-xs text-muted-foreground">{t("lesson.countValue")}</Label>
+                      <Label htmlFor="lesson-count" className="text-xs text-muted-foreground">{t("lesson.countValue")}</Label>
                       <Input
+                        id="lesson-count"
                         type="number"
                         min={1}
                         max={500}
@@ -750,8 +762,8 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
             <FormSection icon={Wallet} title={t("finance.payment")}>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>{t("lesson.cost")}</Label>
-                  <Input type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
+                  <Label htmlFor="lesson-cost">{t("lesson.cost")}</Label>
+                  <Input id="lesson-cost" type="number" value={cost} onChange={(e) => setCost(e.target.value)} />
                 </div>
                 <div>
                   <Label>{t("lesson.currency")}</Label>
@@ -783,6 +795,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                           <span className="text-sm truncate">{s.name}</span>
                           <Input
                             type="number"
+                            aria-label={`${t("lesson.cost")}: ${s.name}`}
                             placeholder={cost || t("lesson.cost")}
                             value={studentCosts[s.id]?.cost ?? ""}
                             onChange={(e) =>
@@ -989,6 +1002,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                   size="sm"
                   variant="outline"
                   className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+                  disabled={!timeValid}
                   onClick={() => void save()}
                 >
                   {t("lesson.saveAnyway")}
@@ -1013,7 +1027,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
               )}
               <div className="ml-auto flex gap-2">
                 <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-                <Button onClick={() => void save()}>{t("lesson.save")}</Button>
+                <Button disabled={!timeValid} onClick={() => void save()}>{t("lesson.save")}</Button>
               </div>
             </div>
           </div>

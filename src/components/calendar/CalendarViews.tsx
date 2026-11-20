@@ -136,13 +136,9 @@ function DraggableLessonCard({
   });
 
   return (
-    <button
+    <div
       ref={setNodeRef}
-      type="button"
       data-lesson
-      {...listeners}
-      {...attributes}
-      onClick={() => onSelect(lesson)}
       onDoubleClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => onContextMenu?.(e, lesson)}
       style={{
@@ -153,39 +149,50 @@ function DraggableLessonCard({
           : `color-mix(in oklab, var(--primary) 20%, var(--card))`,
       }}
       className={cn(
-        "group relative w-full overflow-hidden rounded-lg border-2 text-left shadow-sm transition duration-150",
-        compact ? "px-1.5 py-1.5 text-xs" : "px-3 py-2.5 text-sm",
+        "group relative w-full overflow-hidden rounded-lg border-2 shadow-sm transition duration-150",
         !color && "border-primary/40",
         isDragging && "z-30 opacity-80 ring-2 ring-primary",
       )}
     >
-      <div
-        className="absolute inset-y-0 left-0 w-1"
-        style={{ backgroundColor: color || "var(--primary)" }}
-      />
-      <div className={cn("flex items-start justify-between gap-1", compact ? "pl-1.5" : "pl-2")}>
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold leading-tight tabular-nums">
-            {format(start, "HH:mm")}
-            <span className="font-medium opacity-60">–{format(end, "HH:mm")}</span>
-          </div>
-          <div className="truncate font-medium leading-tight">{lessonStudentNames(lesson)}</div>
-          {!compact && lesson.subject && (
-            <div className="truncate text-[0.85em] opacity-80">{lesson.subject}</div>
-          )}
-          {!compact && studentNotes.length > 0 && (
-            <div className="truncate text-[0.8em] opacity-70">
-              {studentNotes.map((n) => n.note).join(" · ")}
+      <button
+        type="button"
+        {...listeners}
+        {...attributes}
+        onClick={() => onSelect(lesson)}
+        className={cn(
+          "block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          compact ? "px-1.5 py-1.5 text-xs" : "px-3 py-2.5 text-sm",
+        )}
+      >
+        <div
+          className="absolute inset-y-0 left-0 w-1"
+          style={{ backgroundColor: color || "var(--primary)" }}
+        />
+        <div className={cn("flex items-start justify-between gap-1", compact ? "pl-1.5" : "pl-2")}>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold leading-tight tabular-nums">
+              {format(start, "HH:mm")}
+              <span className="font-medium opacity-60">–{format(end, "HH:mm")}</span>
             </div>
-          )}
+            <div className="truncate font-medium leading-tight">{lessonStudentNames(lesson)}</div>
+            {!compact && lesson.subject && (
+              <div className="truncate text-[0.85em] opacity-80">{lesson.subject}</div>
+            )}
+            {!compact && studentNotes.length > 0 && (
+              <div className="truncate text-[0.8em] opacity-70">
+                {studentNotes.map((n) => n.note).join(" · ")}
+              </div>
+            )}
+          </div>
+          <LessonStatusBadges lesson={lesson} className="mt-0.5" size={compact ? "sm" : "md"} />
         </div>
-        <LessonStatusBadges lesson={lesson} className="mt-0.5" size={compact ? "sm" : "md"} />
-      </div>
-      <span
-        role="button"
+      </button>
+      <button
+        type="button"
+        aria-label={`${t("lesson.rescheduleAction")}: ${lessonStudentNames(lesson)}, ${format(start, "HH:mm")}`}
         title={t("lesson.rescheduleAction")}
         className={cn(
-          "absolute bottom-1 right-1 flex items-center justify-center rounded-md bg-card/80 p-0.5 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100",
+          "absolute bottom-1 right-1 flex items-center justify-center rounded-md bg-card/80 p-0.5 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100",
           compact && "bottom-0.5 right-0.5",
         )}
         onPointerDown={(e) => e.stopPropagation()}
@@ -195,8 +202,8 @@ function DraggableLessonCard({
         }}
       >
         <CalendarClock className="h-3.5 w-3.5" />
-      </span>
-    </button>
+      </button>
+    </div>
   );
 }
 

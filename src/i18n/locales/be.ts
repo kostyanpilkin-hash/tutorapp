@@ -166,8 +166,9 @@ const be = {
     cancel: "Адмена",
     copy: "Капіяваць",
     copied: "Скапіявана",
+    close: "Закрыць",
   },
-  timePicker: { hours: "Гадзіны", minutes: "Хвіліны", done: "Гатова" },
+  timePicker: { hours: "Гадзіны", minutes: "Хвіліны", done: "Гатова", open: "Выбраць час", invalid: "Увядзіце час ГГ:ХХ ад 00:00 да 23:59", nextDay: "+1 дзень" },
   status: { scheduled: "Запланавана", completed: "Праведзена", cancelled: "Не адбылося", no_show: "Вучань не прыйшоў" },
   payment: { paid: "Аплачана", unpaid: "Не аплачана" },
   reminder: {

@@ -28,3 +28,19 @@ export function parseTimeInput(raw: string): string | null {
   if (h > 23 || m > 59) return null;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
+
+/**
+ * End of a lesson that starts at `start` ("HH:mm") and lasts `minutes`:
+ * wall-clock "HH:mm" plus how many days later it ends (0 = same day).
+ */
+export function lessonEnd(start: string, minutes: number): { end: string; dayOffset: number } | null {
+  const parsed = parseTimeInput(start);
+  if (!parsed || !Number.isFinite(minutes) || minutes <= 0) return null;
+  const [h, m] = parsed.split(":").map(Number);
+  const total = h * 60 + m + Math.round(minutes);
+  const inDay = total % 1440;
+  return {
+    end: `${String(Math.floor(inDay / 60)).padStart(2, "0")}:${String(inDay % 60).padStart(2, "0")}`,
+    dayOffset: Math.floor(total / 1440),
+  };
+}

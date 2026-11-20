@@ -9,7 +9,7 @@ import {
   rescheduleSeriesFromInstance,
 } from "@/lib/lessonActions";
 import { parseLocalDateTime } from "@/lib/recurrence";
-import { parseTimeInput } from "@/lib/timeInput";
+import { lessonEnd, parseTimeInput } from "@/lib/timeInput";
 import type { Lesson } from "@/types/lesson";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +46,8 @@ export function RescheduleDialog() {
   const [scope, setScope] = useState<Scope>("this");
   const [warning, setWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [timeValid, setTimeValid] = useState(true);
+  const [timePanelHost, setTimePanelHost] = useState<HTMLDivElement | null>(null);
 
   const isSeries =
     !!lesson &&
@@ -61,13 +63,13 @@ export function RescheduleDialog() {
     setScope("this");
     setWarning(null);
     setSaving(false);
+    setTimeValid(true);
   }, [lesson]);
 
   const parsedTime = parseTimeInput(time);
   const start = date && parsedTime ? parseLocalDateTime(date, parsedTime) : null;
-  const endLabel = start
-    ? format(new Date(start.getTime() + (lesson?.durationMinutes ?? 0) * 60_000), "HH:mm")
-    : "";
+  const end = parsedTime && lesson ? lessonEnd(parsedTime, lesson.durationMinutes) : null;
+  const endLabel = end ? (end.dayOffset > 0 ? `${end.end} (${t("timePicker.nextDay")})` : end.end) : "";
 
   useEffect(() => {
     if (!lesson) {
@@ -101,7 +103,7 @@ export function RescheduleDialog() {
   }, [lesson, date, time, scope, t]);
 
   const save = async () => {
-    if (!lesson || !start) return;
+    if (!lesson || !start || !timeValid) return;
     setSaving(true);
     try {
       const excludeId = overlapExcludeId(
@@ -149,7 +151,7 @@ export function RescheduleDialog() {
 
   return (
     <Dialog open={Boolean(lesson)} onOpenChange={(v) => !v && close()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("lesson.rescheduleTitle")}</DialogTitle>
         </DialogHeader>
@@ -174,23 +176,32 @@ export function RescheduleDialog() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="reschedule-time">{t("lesson.time")}</Label>
-                <TimePicker id="reschedule-time" value={time} onChange={setTime} />
+                <TimePicker
+                  id="reschedule-time"
+                  value={time}
+                  onChange={setTime}
+                  panelHost={timePanelHost}
+                  describedBy={endLabel ? "reschedule-end-time" : undefined}
+                  onValidityChange={setTimeValid}
+                />
                 {endLabel && parsedTime && (
-                  <p className="text-xs text-muted-foreground">
+                  <p id="reschedule-end-time" className="text-xs tabular-nums text-muted-foreground">
                     {parsedTime} → {endLabel}
                   </p>
                 )}
               </div>
+              <div ref={setTimePanelHost} className="col-span-2 empty:hidden" />
             </div>
 
             {isSeries && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label={t("lesson.rescheduleTitle")}>
                 {scopeCards.map((card) => (
                   <button
                     key={card.value}
                     type="button"
+                    aria-pressed={scope === card.value}
                     className={cn(
-                      "rounded-lg border p-3 text-left transition-colors",
+                      "rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       scope === card.value
                         ? "border-primary bg-primary/5"
                         : "border-border bg-card hover:bg-muted/50",
@@ -214,7 +225,7 @@ export function RescheduleDialog() {
               <Button type="button" variant="outline" onClick={close}>
                 {t("common.cancel")}
               </Button>
-              <Button type="button" disabled={!start || saving} onClick={() => void save()}>
+              <Button type="button" disabled={!start || !timeValid || saving} onClick={() => void save()}>
                 {t("lesson.rescheduleAction")}
               </Button>
             </div>

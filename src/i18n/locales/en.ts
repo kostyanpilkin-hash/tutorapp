@@ -166,8 +166,9 @@ const en = {
     cancel: "Cancel",
     copy: "Copy",
     copied: "Copied",
+    close: "Close",
   },
-  timePicker: { hours: "Hours", minutes: "Minutes", done: "Done" },
+  timePicker: { hours: "Hours", minutes: "Minutes", done: "Done", open: "Choose time", invalid: "Enter time as HH:MM, 00:00 to 23:59", nextDay: "+1 day" },
   status: { scheduled: "Scheduled", completed: "Completed", cancelled: "Did not take place", no_show: "Student did not attend" },
   payment: { paid: "Paid", unpaid: "Unpaid" },
   reminder: {
