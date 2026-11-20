@@ -478,11 +478,7 @@ async fn handle_message(bot: &Bot, m: Message) -> Result<(), String> {
             bot.send(chat_id, &text, Some(settings_markup(&t, &offs, &fields)), true).await?;
         }
         _ => {
-            if normalized.starts_with('/') {
-                bot.send(chat_id, t.not_linked(), Some(reply_keyboard(&t)), true).await?;
-            } else {
-                bot.send(chat_id, t.not_linked(), Some(reply_keyboard(&t)), true).await?;
-            }
+            bot.send(chat_id, t.not_linked(), Some(reply_keyboard(&t)), true).await?;
         }
     }
     Ok(())
@@ -531,7 +527,8 @@ fn debts_message(t: &T, conn: &Connection) -> Result<String, String> {
         return Ok(t.no_debts().to_string());
     }
     // Group currency rows by student, preserving the query's name order.
-    let mut students: Vec<(String, Vec<(i64, f64, String)>)> = Vec::new();
+    type CurrencyDebt = (i64, f64, String);
+    let mut students: Vec<(String, Vec<CurrencyDebt>)> = Vec::new();
     for (name, n, sum, cur) in rows {
         match students.iter_mut().find(|(sn, _)| *sn == name) {
             Some((_, v)) => v.push((n, sum, cur)),
@@ -602,7 +599,7 @@ async fn handle_callback(bot: &Bot, cb: CallbackQuery) -> Result<(), String> {
         "f" => {
             let v = d.v.clone().unwrap_or_default();
             let mut list = field_flags(&conn);
-            if list.iter().any(|x| *x == v) { list.retain(|x| *x != v) } else { list.push(v); }
+            if list.contains(&v) { list.retain(|x| *x != v) } else { list.push(v); }
             if list.is_empty() { list.push("student".into()); }
             set_setting(&conn, "tg_fields", &list.join(","))?;
             bot.answer_callback(&cb.id, None).await?;

@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint . && npm run lint:rust",
-    "lint:rust": "cd src-tauri && cargo clippy -- -D warnings",
+    "lint:rust": "cd src-tauri && cargo clippy --workspace --all-targets -- -D warnings",
+    "verify:frontend": "tsc --noEmit && eslint . && vitest run",
+    "verify:backend": "cd src-tauri && cargo check && cargo test && cargo clippy --workspace --all-targets -- -D warnings",
     "tauri": "tauri",
     "build:installer": "npm run tauri build && node scripts/move-installers.js"
   },

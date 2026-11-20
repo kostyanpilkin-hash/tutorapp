@@ -1,0 +1,41 @@
+name: Verify
+
+# Frontend + backend gate. Runs on every push/PR and is reused by release.yml
+# so installers are only built from a commit that passes the same checks.
+on:
+  push:
+    branches: ["main"]
+    paths-ignore: ["**.md", ".devin/**", "promo/**"]
+  pull_request:
+    paths-ignore: ["**.md", ".devin/**", "promo/**"]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run verify:frontend
+
+  backend:
+    # Windows: no extra webkit/gtk system packages needed to compile the Tauri crate.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: verify-windows
+          workspaces: src-tauri
+      - run: npm run verify:backend
+        shell: bash

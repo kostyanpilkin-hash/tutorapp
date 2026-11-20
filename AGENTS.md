@@ -21,7 +21,7 @@
 
 ## Сборка и проверки
 
-- Проверки: `npx tsc --noEmit`, `cargo check` (в `src-tauri`), `npm test` (vitest, Nтестов).
+- Проверки (gate, то же в CI `verify.yml`): `npm run verify:frontend` (tsc + eslint + vitest) и `npm run verify:backend` (cargo check + test + clippy `--all-targets -D warnings`). Оба должны быть exit 0; parity-тест в vitest пропускается без артефактов — это не pass.
 - Установщик: `npm run build:installer` → MSI+NSIS в `installers/<дата>/`.
 - Установка: `TutorApp_0.2.0_x64-setup.exe /S` (NSIS, тихая).
 - База приложения: `%APPDATA%\TutorApp\tutor.db` (sqlite; читать можно через `node:sqlite` в Node 24+).

@@ -40,6 +40,7 @@ pub(crate) fn lesson_with_children(conn: &Connection, id: &str) -> Vec<String> {
     ids
 }
 
+#[expect(clippy::too_many_arguments, reason = "mirrors activity_log columns; replaced by a typed entry in the schedule mutation module (plan Task 6)")]
 pub(crate) fn log_activity(
     conn: &Connection,
     category: &str,

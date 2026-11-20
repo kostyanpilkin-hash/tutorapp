@@ -11,8 +11,6 @@ pub struct Bot {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct User {
-    pub id: i64,
-    pub first_name: Option<String>,
     pub username: Option<String>,
 }
 
@@ -32,7 +30,6 @@ pub struct Message {
 #[derive(Deserialize, Debug, Clone)]
 pub struct CallbackQuery {
     pub id: String,
-    pub from: User,
     pub message: Option<Message>,
     pub data: Option<String>,
 }

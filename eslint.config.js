@@ -27,9 +27,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["scripts/**/*.js", "*.config.js"],
+    files: ["scripts/**/*.{js,mjs}", "promo/scripts/**/*.mjs", "*.config.js"],
     languageOptions: {
       globals: globals.node,
+    },
+    rules: {
+      "no-empty": ["error", { allowEmptyCatch: true }],
     },
   },
 );

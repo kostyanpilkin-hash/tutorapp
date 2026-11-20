@@ -9,6 +9,11 @@
 - Для клиентов ≤0.2.2, чей endpoint ещё смотрит в `tutorapp_public`, воркфлоу зеркалирует туда `latest.json` (ссылки внутри — на tutorapp): они обновятся один раз и дальше пойдут по новому endpoint
 - Версия 0.2.3
 
+### Проверки
+- Единый gate: `npm run verify:frontend` (tsc + eslint + vitest) и `npm run verify:backend` (cargo check + test + clippy `--all-targets -D warnings`); новый workflow `verify.yml` на push/PR, а `release.yml` теперь собирает установщики только после зелёного verify
+- ESLint: 0 ошибок (Node-глобали для `scripts/**/*.mjs` и `promo/scripts`, пустой `catch` разрешён только в Node-скриптах); 27 предупреждений React hooks оставлены для разбора в задачах жизненного цикла форм
+- Clippy чистый: убран мёртвый код (неиспользуемые поля Telegram API и строки), схлопнута одинаковая ветка, `contains`/`sort_by_key`, тип `ParsedRule`; `too_many_arguments` — точечный `#[expect]` с причиной у `log_activity` и тестовых фикстур
+
 ### Инструменты
 - Подключён graphify — knowledge graph кодовой базы (tree-sitter AST, без LLM): граф в `graphify-out/` (1269 узлов / 3514 рёбер / 67 сообществ), git-хуки автообновления на commit/checkout/merge/rewrite, merge-драйвер для graph.json, правила использования в AGENTS.md. Ограничение: мост `invoke() ↔ #[tauri::command]` не моделируется — фронт и бэк в графе не связаны.
 

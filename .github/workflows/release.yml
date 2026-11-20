@@ -20,7 +20,11 @@ on:
         type: string
 
 jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
   prepare:
+    needs: verify
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.release.outputs.id }}

@@ -707,6 +707,7 @@ mod tests {
         .unwrap();
     }
 
+    #[expect(clippy::too_many_arguments, reason = "test fixture builder; one argument per lesson column")]
     fn insert_lesson_ex(
         conn: &Connection,
         id: &str,

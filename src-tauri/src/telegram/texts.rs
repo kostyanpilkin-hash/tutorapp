@@ -106,7 +106,6 @@ impl T {
     }
     pub fn total_label(&self) -> &'static str { self.s("Итого", "Total", "Разам") }
     pub fn grand_total(&self) -> &'static str { self.s("Всего", "Grand total", "Усяго") }
-    pub fn lesson_now(&self) -> &'static str { self.s("Занятие сейчас", "Lesson starting now", "Занятак зараз") }
     pub fn field_student(&self) -> &'static str { self.s("Ученик", "Student", "Вучань") }
     pub fn field_time(&self) -> &'static str { self.s("Время", "Time", "Час") }
     pub fn field_link(&self) -> &'static str { self.s("Ссылка", "Link", "Спасылка") }
@@ -138,7 +137,6 @@ impl T {
             },
         }
     }
-    pub fn summary_label(&self) -> &'static str { self.s("Итог дня:", "Day summary:", "Вынік дня:") }
     pub fn unpaid_label(&self) -> &'static str { self.s("Не оплачено:", "Unpaid:", "Не аплачана:") }
     pub fn link_text(&self) -> &'static str { self.s("Ссылка", "Link", "Спасылка") }
     pub fn test_ok(&self) -> &'static str { self.s("Связь с TutorApp работает ✅", "TutorApp connection works ✅", "Сувязь з TutorApp працуе ✅") }

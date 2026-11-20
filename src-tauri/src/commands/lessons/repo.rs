@@ -170,7 +170,7 @@ pub(crate) fn lesson_display_names(
         .collect())
 }
 
-/// Keep a single exception per (parent, instance slot); prefer finalized status, then newest.
+// Keep a single exception per (parent, instance slot); prefer finalized status, then newest.
 
 pub(crate) fn student_names(conn: &Connection, students: &[LessonStudentInput]) -> Result<String, String> {
     let mut names = Vec::new();

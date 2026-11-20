@@ -269,7 +269,7 @@ pub fn collect(conn: &Connection, tz: chrono_tz::Tz, from: NaiveDate, to: NaiveD
         idx += 1;
         k
     });
-    out.sort_by(|a, b| a.start_utc.cmp(&b.start_utc));
+    out.sort_by_key(|o| o.start_utc);
     Ok(out)
 }
 
@@ -369,7 +369,9 @@ pub fn parse_any_date(s: &str, tz: chrono_tz::Tz) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
 
-pub fn parse_rule(rule: &str) -> Option<(Vec<Weekday>, i64, Option<DateTime<Utc>>, Option<i64>)> {
+pub type ParsedRule = (Vec<Weekday>, i64, Option<DateTime<Utc>>, Option<i64>);
+
+pub fn parse_rule(rule: &str) -> Option<ParsedRule> {
     let mut freq = String::new();
     let mut bydays: Vec<Weekday> = Vec::new();
     let mut interval: i64 = 1;
