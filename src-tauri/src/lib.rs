@@ -48,6 +48,7 @@ pub fn run() {
             get_lesson,
             create_lesson,
             update_lesson,
+            split_lesson_series,
             delete_lesson,
             delete_lesson_series,
             delete_lesson_series_from_instance,

@@ -52,6 +52,10 @@ export const api = {
   updateLesson: (id: string, input: LessonInput) =>
     call(() => invoke<Lesson>("update_lesson", { id, input })),
 
+  /** "This and following": one backend transaction; returns the new series. */
+  splitLessonSeries: (parentId: string, instanceDate: string, input: LessonInput, ruleOverride: string | null) =>
+    call(() => invoke<Lesson>("split_lesson_series", { parentId, instanceDate, input, ruleOverride })),
+
   deleteLesson: (id: string) => call(() => invoke<void>("delete_lesson", { id })),
 
   deleteLessonSeries: (id: string) => call(() => invoke<void>("delete_lesson_series", { id })),

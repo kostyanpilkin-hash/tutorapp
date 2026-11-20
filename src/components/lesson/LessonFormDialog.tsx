@@ -7,7 +7,7 @@ import { studentToInput } from "@/types/student";
 import { api, overlapNamesFromError } from "@/lib/api";
 import { CURRENCIES } from "@/lib/money";
 import { formatTimeInTimezone } from "@/lib/contacts";
-import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, withUntil, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
+import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
 import { hrefFor, textHasLinks } from "@/lib/linkify";
 import { buildParticipantInputs, templateParticipants } from "@/lib/lessonMutation";
 import { lessonEnd } from "@/lib/timeInput";
@@ -132,6 +132,8 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
   const [recurrenceEnd, setRecurrenceEnd] = useState<"none" | "until" | "count">("none");
   const [recurrenceUntil, setRecurrenceUntil] = useState("");
   const [recurrenceCount, setRecurrenceCount] = useState("10");
+  // Recurrence edited in this session: only then does "this and following" send a new rule.
+  const [recurrenceTouched, setRecurrenceTouched] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<(OverlapConflict & { scope?: RecurrenceEditScope }) | null>(null);
   const [saving, setSaving] = useState(false);
@@ -294,6 +296,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
     setFieldError(null);
     setConflict(null);
     confirmedRef.current = null;
+    setRecurrenceTouched(false);
     setTimeValid(true);
     setPendingScope(null);
     setScopeOpen(false);
@@ -430,19 +433,12 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
             });
           }
         } else if (scope === "thisAndFuture" && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
-          const parent = await api.getLesson(parentId);
-          const until = new Date(instanceDate);
-          await api.updateLesson(parentId, {
-            ...lessonToInput(parent),
-            recurrenceRule: withUntil(parent.recurrenceRule || WEEKLY_RULE, until),
-          });
-          await api.createLesson({
-            ...input,
-            students: templateParticipants(input.students),
-            recurrenceRule: buildRecurrenceRule() || WEEKLY_RULE,
-            recurrenceParentId: null,
-            recurrenceInstanceDate: null,
-          });
+          await api.splitLessonSeries(
+            parentId,
+            instanceDate,
+            { ...input, students: templateParticipants(input.students), recurrenceParentId: null, recurrenceInstanceDate: null },
+            recurrenceTouched ? buildRecurrenceRule() : null,
+          );
         } else if (scope === "all" && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
           const parent = await api.getLesson(parentId);
           // Keep series anchor date; apply new time-of-day from the form.
@@ -720,6 +716,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                 value={recurrence}
                 onValueChange={(v) => {
                   setRecurrence(v);
+                  setRecurrenceTouched(true);
                   if (v === "weekly" && weekdays.length === 0 && date) {
                     setWeekdays([parseLocalDateTime(date, time || "10:00").getDay()]);
                   }
@@ -756,11 +753,12 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-border bg-card text-muted-foreground hover:bg-muted",
                             )}
-                            onClick={() =>
+                            onClick={() => {
+                              setRecurrenceTouched(true);
                               setWeekdays((prev) =>
                                 active ? prev.filter((x) => x !== d) : [...prev, d],
-                              )
-                            }
+                              );
+                            }}
                           >
                             {t(`lesson.weekday.${key}`)}
                           </button>
@@ -772,7 +770,10 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                     <Label className="mb-2 block text-xs text-muted-foreground">{t("lesson.recurrenceEnd")}</Label>
                     <Select
                       value={recurrenceEnd}
-                      onValueChange={(v) => setRecurrenceEnd(v as "none" | "until" | "count")}
+                      onValueChange={(v) => {
+                        setRecurrenceTouched(true);
+                        setRecurrenceEnd(v as "none" | "until" | "count");
+                      }}
                     >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -789,7 +790,10 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                         id="lesson-until"
                         type="date"
                         value={recurrenceUntil}
-                        onChange={(e) => setRecurrenceUntil(e.target.value)}
+                        onChange={(e) => {
+                          setRecurrenceTouched(true);
+                          setRecurrenceUntil(e.target.value);
+                        }}
                       />
                     </div>
                   )}
@@ -802,7 +806,10 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
                         min={1}
                         max={500}
                         value={recurrenceCount}
-                        onChange={(e) => setRecurrenceCount(e.target.value)}
+                        onChange={(e) => {
+                          setRecurrenceTouched(true);
+                          setRecurrenceCount(e.target.value);
+                        }}
                       />
                     </div>
                   )}

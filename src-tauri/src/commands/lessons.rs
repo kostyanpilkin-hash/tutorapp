@@ -355,6 +355,33 @@ pub fn create_lesson(
     })?;
     get_lesson(state, id)
 }
+/// "This and following": cuts the series at the selected slot and starts the
+/// new series from it — one transaction (see `domain::schedule_mutations`).
+#[tauri::command]
+pub fn split_lesson_series(
+    state: tauri::State<AppState>,
+    parent_id: String,
+    instance_date: String,
+    input: LessonInput,
+    rule_override: Option<String>,
+) -> Result<Lesson, String> {
+    if let Err(errors) = input.validate() {
+        return Err(format!("Ошибка валидации: {}", errors));
+    }
+    let receipt = state.pool.with_conn(|conn| {
+        crate::domain::schedule_mutations::split_series(
+            conn,
+            &crate::domain::schedule_mutations::SplitRequest {
+                parent_id: &parent_id,
+                instance_date: &instance_date,
+                template: &input,
+                rule_override: rule_override.as_deref(),
+            },
+        )
+    })?;
+    get_lesson(state, receipt.new_parent_id)
+}
+
 #[tauri::command]
 pub fn update_lesson(
     state: tauri::State<AppState>,
