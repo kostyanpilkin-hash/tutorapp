@@ -26,6 +26,13 @@
 - База приложения: `%APPDATA%\TutorApp\tutor.db` (sqlite; читать можно через `node:sqlite` в Node 24+).
 - Жёстко не перечитывать одни и те же строки файлов в цикле — если знаешь якорь, правь; для дописки в конец *** — `cat >>`.
 
+## Граф кода (graphify)
+
+- `graphify-out/graph.json` — knowledge graph кодовой базы (tree-sitter AST, детерминированно, без LLM). Автообновляется git-хуками на commit/checkout/merge/rewrite; ручное обновление `graphify update .`, полный пересчёт `graphify extract . --code-only`. Разово отключить хук: `GRAPHIFY_SKIP_HOOK=1`.
+- При разведке кодовой базы использовать ПЕРЕД глобальным grep: `graphify explain "X"` (соседи узла с file:line), `graphify path "A" "B"`, `graphify affected "X"` (что затронет изменение), `graphify god-nodes`, `graphify query "..."` (BFS-контекст), `graphify section "X"` (секции markdown).
+- Ограничение: мост `invoke() ↔ #[tauri::command]` в графе не моделируется — фронт и бэк не связаны; межъязыковые связи искать grep'ом по имени команды.
+- Сообщества без осмысленных имён («Community N») — нет LLM-бэкенда. `graphify-out/` gitignored; отчёт `graphify-out/GRAPH_REPORT.md`, визуализация `graphify-out/graph.html`.
+
 ## G1 — единый экспандер серий на бэкенде: статус
 
 Выполнено: фронт читает расписание через `get_expanded_lessons` (id экземпляров `parent::ISO`, поля `Occ.row_id`/`instance_iso`); scheduler и `find_overlaps` — на `occurrences::collect`; `snooze_reminder` нормализует ключи `parent::ISO`. Фронтовый `expandLessons` удалён (G1-4b); замороженная эталонная копия живёт в `src/lib/parity.test.ts` как оракул паритета.
