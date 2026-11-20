@@ -328,17 +328,9 @@ pub fn expand_weekly_starts_local(
 /// Prefer the newest exception when several exist for one slot
 /// (completed > no_show > cancelled > other, then latest update).
 fn pick_exception<'a>(matches: &[&'a Raw]) -> Option<&'a Raw> {
-    fn rank(status: &str) -> u8 {
-        match status {
-            "completed" => 4,
-            "no_show" => 3,
-            "cancelled" => 2,
-            _ => 1,
-        }
-    }
     matches
         .iter()
-        .max_by_key(|m| (rank(&m.status), m.updated.clone(), m.created.clone()))
+        .max_by_key(|m| crate::domain::identity::exception_rank(&m.status, &m.updated, &m.created, &m.id))
         .copied()
 }
 

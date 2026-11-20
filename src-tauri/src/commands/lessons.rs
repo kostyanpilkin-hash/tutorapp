@@ -11,9 +11,7 @@ mod overlaps;
 mod repo;
 
 pub(crate) use activity_log::{lesson_with_children, log_activity, log_lesson_diff};
-pub(crate) use archive::{
-    archive_rows, dedupe_all_exception_slots, dedupe_exceptions_for_instance,
-};
+pub(crate) use archive::{archive_rows, dedupe_exceptions_for_instance};
 pub use archive::{delete_lesson_series_from_instance, restore_lesson_archive};
 pub(crate) use overlaps::{
     exception_row_ids, find_overlaps, find_overlaps_excluding_rows, overlap_error,
@@ -21,7 +19,7 @@ pub(crate) use overlaps::{
 pub use overlaps::check_overlaps;
 pub(crate) use repo::{
     delete_lesson_cascade, insert_reminders, lesson_display_name, lesson_display_names,
-    load_lesson_by_id, resolve_lesson_color, row_to_lesson, same_instant_str,
+    load_lesson_by_id, resolve_lesson_color, row_to_lesson,
     save_lesson_students, student_names,
 };
 
@@ -33,7 +31,6 @@ pub fn get_lessons(
     to: String,
 ) -> Result<Vec<Lesson>, String> {
     state.pool.with_conn(|conn| {
-        let _ = dedupe_all_exception_slots(conn);
         let mut stmt = conn
             .prepare(&format!(
                 "{LESSON_SELECT} FROM lessons WHERE (start_at >= ?1 AND start_at <= ?2)
@@ -59,7 +56,6 @@ pub fn get_lessons_for_student(
     to: Option<String>,
 ) -> Result<Vec<Lesson>, String> {
     state.pool.with_conn(|conn| {
-        let _ = dedupe_all_exception_slots(conn);
         if let (Some(f), Some(t)) = (from, to) {
             let mut stmt = conn
                 .prepare(&format!(
@@ -97,7 +93,6 @@ pub(crate) fn expanded_lessons_in_range(
     from_dt: DateTime<Utc>,
     to_dt: DateTime<Utc>,
 ) -> Result<Vec<Lesson>, String> {
-    let _ = dedupe_all_exception_slots(conn);
     let tz = crate::occurrences::timezone(conn);
     let occs = crate::occurrences::collect(
         conn,
@@ -1024,7 +1019,7 @@ mod tests {
             Some("2026-03-16T10:00:00.000Z"),
         );
         let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-22T23:59:59Z");
-        // dedupe_all_exception_slots keeps the best row only.
+        // The read model picks the best row per slot without deleting others.
         assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z", "e_done"]);
     }
 
@@ -1054,6 +1049,83 @@ mod tests {
         );
         let ids = expanded_ids(&conn, "2026-03-09T00:00:00Z", "2026-03-22T23:59:59Z");
         assert_eq!(ids, ["p1::2026-03-09T10:00:00.000Z", "p1::2026-03-16T10:00:00.000Z", "e1"]);
+    }
+
+    fn lesson_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM lessons", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn date_only_slots_on_different_days_are_not_deduped() {
+        let conn = test_conn();
+        insert_lesson_ex(&conn, "p1", "Ivan", "2026-11-02T10:00:00Z", "scheduled", Some("FREQ=WEEKLY;BYDAY=MO"), None, None);
+        insert_lesson_ex(&conn, "e9", "Ivan", "2026-11-09T10:00:00Z", "completed", None, Some("p1"), Some("2026-11-09"));
+        insert_lesson_ex(&conn, "e16", "Ivan", "2026-11-16T10:00:00Z", "completed", None, Some("p1"), Some("2026-11-16"));
+        insert_lesson_ex(&conn, "bad", "Ivan", "2026-11-23T10:00:00Z", "scheduled", None, Some("p1"), Some("not-a-date"));
+        assert_eq!(lesson_count(&conn), 4);
+
+        // Plain reads must never delete rows.
+        let ids = expanded_ids(&conn, "2026-11-01T00:00:00Z", "2026-11-30T23:59:59Z");
+        assert_eq!(lesson_count(&conn), 4);
+        assert!(ids.contains(&"e9".to_string()));
+        assert!(ids.contains(&"e16".to_string()));
+
+        // Startup diagnostics: reports the invalid key, deletes nothing.
+        let report = crate::domain::identity::scan_exception_slots(&conn, chrono_tz::UTC).unwrap();
+        assert_eq!(lesson_count(&conn), 4);
+        assert!(report.duplicates.is_empty());
+        assert_eq!(report.invalid.len(), 1);
+        assert_eq!(report.invalid[0].row_id, "bad");
+    }
+
+    fn slot_fixture(conn: &Connection) {
+        insert_lesson_ex(conn, "p1", "Ivan", "2026-11-02T10:00:00Z", "scheduled", Some("FREQ=WEEKLY;BYDAY=MO"), None, None);
+        // Same slot (Nov 9) stored in two formats.
+        insert_lesson_ex(conn, "dupA", "Ivan", "2026-11-09T10:00:00Z", "completed", None, Some("p1"), Some("2026-11-09T10:00:00.000Z"));
+        insert_lesson_ex(conn, "dupB", "Ivan", "2026-11-09T10:00:00Z", "scheduled", None, Some("p1"), Some("2026-11-09"));
+        insert_lesson_ex(conn, "e16", "Ivan", "2026-11-16T10:00:00Z", "completed", None, Some("p1"), Some("2026-11-16"));
+        insert_lesson_ex(conn, "bad", "Ivan", "2026-11-23T10:00:00Z", "scheduled", None, Some("p1"), Some("not-a-date"));
+    }
+
+    #[test]
+    fn scan_groups_only_true_slot_duplicates() {
+        let conn = test_conn();
+        slot_fixture(&conn);
+        let scan = crate::domain::identity::scan_exception_slots(&conn, chrono_tz::UTC).unwrap();
+        assert_eq!(scan.duplicates.len(), 1);
+        assert_eq!(scan.duplicates[0].keep, "dupA");
+        assert_eq!(scan.duplicates[0].extra, vec!["dupB".to_string()]);
+        assert_eq!(scan.invalid.iter().map(|i| i.row_id.as_str()).collect::<Vec<_>>(), ["bad"]);
+        assert_eq!(lesson_count(&conn), 5);
+    }
+
+    #[test]
+    fn instance_dedupe_archives_extra_rows_of_that_slot_only() {
+        let conn = test_conn();
+        slot_fixture(&conn);
+        let keep = dedupe_exceptions_for_instance(&conn, "p1", "2026-11-09T10:00:00.000Z").unwrap();
+        assert_eq!(keep.as_deref(), Some("dupA"));
+        let ids: Vec<String> = conn
+            .prepare("SELECT id FROM lessons ORDER BY id").unwrap()
+            .query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect();
+        assert_eq!(ids, ["bad", "dupA", "e16", "p1"]);
+        let archived: String = conn
+            .query_row("SELECT id FROM archived_lessons", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(archived, "dupB");
+    }
+
+    #[test]
+    fn failed_cleanup_rolls_back_all_rows() {
+        let conn = test_conn();
+        slot_fixture(&conn);
+        conn.execute_batch("DROP TABLE archived_reminders").unwrap();
+        conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+        assert!(dedupe_exceptions_for_instance(&conn, "p1", "2026-11-09").is_err());
+        conn.execute_batch("ROLLBACK").unwrap();
+        assert_eq!(lesson_count(&conn), 5);
+        let archives: i64 = conn.query_row("SELECT COUNT(*) FROM lesson_archive", [], |r| r.get(0)).unwrap();
+        assert_eq!(archives, 0);
     }
 
     #[test]

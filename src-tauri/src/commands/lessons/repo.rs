@@ -1,5 +1,4 @@
 use crate::models::{Lesson, LessonStudent, LessonStudentInput, Reminder};
-use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Row};
 use uuid::Uuid;
 
@@ -91,13 +90,6 @@ pub(crate) fn insert_reminders(conn: &Connection, lesson_id: &str, minutes: &[i6
         .map_err(|e| e.to_string())?;
     }
     Ok(())
-}
-
-pub(crate) fn same_instant_str(a: &str, b: &str) -> bool {
-    match (a.parse::<DateTime<Utc>>(), b.parse::<DateTime<Utc>>()) {
-        (Ok(da), Ok(db)) => da.timestamp() == db.timestamp(),
-        _ => a == b,
-    }
 }
 
 pub(crate) fn delete_lesson_cascade(conn: &Connection, id: &str) -> Result<(), String> {

@@ -40,8 +40,21 @@ pub fn init_db() -> Result<AppState, String> {
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000; PRAGMA cache_size=-20000;")
         .map_err(|e| e.to_string())?;
     migrations::run(&conn)?;
-    if let Err(e) = crate::commands::lessons::dedupe_all_exception_slots(&conn) {
-        eprintln!("Exception dedupe on startup: {e}");
+    // Diagnostics only: duplicate/invalid exception slots are reported, never
+    // deleted on startup (destructive cleanup needs a snapshot + migration).
+    match crate::domain::identity::scan_exception_slots(&conn, crate::occurrences::timezone(&conn)) {
+        Ok(scan) => {
+            for g in &scan.duplicates {
+                eprintln!(
+                    "Exception slot duplicate: parent {} on {} keeps {}, extra {:?}",
+                    g.key.parent_id, g.key.local_date, g.keep, g.extra
+                );
+            }
+            for i in &scan.invalid {
+                eprintln!("Exception slot invalid: row {} (parent {}): {}", i.row_id, i.parent_id, i.reason);
+            }
+        }
+        Err(e) => eprintln!("Exception slot scan failed: {e}"),
     }
     conn.execute(
         "DELETE FROM reminder_snoozes WHERE snooze_until < ?1",

@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod domain;
 mod http_server;
 mod models;
 mod occurrences;

@@ -1,16 +1,24 @@
 use crate::db::AppState;
-use chrono::{DateTime, Utc};
+use crate::domain::identity::{exception_rank, parse_slot_key};
+use chrono::Utc;
 use rusqlite::{params, Connection};
 use super::*;
 
+/// Resolves the exception row for one slot inside the caller's transaction.
+/// Extra rows of the same slot are archived (undoable) before removal; rows
+/// with an unparseable instance key never match and are never deleted.
 pub(crate) fn dedupe_exceptions_for_instance(
     conn: &Connection,
     parent_id: &str,
     instance_date: &str,
 ) -> Result<Option<String>, String> {
+    let tz = crate::occurrences::timezone(conn);
+    let target = parse_slot_key(parent_id, instance_date, tz).map_err(|e| e.to_string())?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, recurrence_instance_date, status, updated_at FROM lessons
+            "SELECT id, recurrence_instance_date, status,
+                    COALESCE(updated_at, ''), COALESCE(created_at, '')
+             FROM lessons
              WHERE recurrence_parent_id = ?1
                AND recurrence_instance_date IS NOT NULL",
         )
@@ -20,93 +28,33 @@ pub(crate) fn dedupe_exceptions_for_instance(
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })
-        .map_err(|e| e.to_string())?;
-
-    let mut matches: Vec<(String, String, String)> = Vec::new();
-    for row in rows {
-        let (id, inst, status, updated_at) = row.map_err(|e| e.to_string())?;
-        if same_instant_str(&inst, instance_date) {
-            matches.push((id, status, updated_at));
-        }
-    }
-    if matches.is_empty() {
-        return Ok(None);
-    }
-    matches.sort_by(|a, b| {
-        exception_status_rank(&b.1)
-            .cmp(&exception_status_rank(&a.1))
-            .then_with(|| b.2.cmp(&a.2))
-    });
-    let keep = matches[0].0.clone();
-    for (id, _, _) in matches.into_iter().skip(1) {
-        delete_lesson_cascade(conn, &id)?;
-    }
-    Ok(Some(keep))
-}
-
-pub(crate) fn exception_status_rank(status: &str) -> i32 {
-    match status {
-        "completed" => 4,
-        "no_show" => 3,
-        "cancelled" => 2,
-        _ => 1,
-    }
-}
-
-/// Remove duplicate exception rows across the whole DB (same parent + instance slot).
-#[allow(clippy::type_complexity)]
-pub(crate) fn dedupe_all_exception_slots(conn: &Connection) -> Result<(), String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, recurrence_parent_id, recurrence_instance_date, status, updated_at FROM lessons
-             WHERE recurrence_parent_id IS NOT NULL AND recurrence_parent_id != ''
-               AND recurrence_instance_date IS NOT NULL",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(2)?.unwrap_or_default(),
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
             ))
         })
         .map_err(|e| e.to_string())?;
 
-    let mut groups: std::collections::HashMap<(String, i64), Vec<(String, String, String)>> =
-        std::collections::HashMap::new();
+    let mut matches: Vec<(String, String, String, String)> = Vec::new();
     for row in rows {
-        let (id, parent_id, instance_date, status, updated_at) = row.map_err(|e| e.to_string())?;
-        let ts = instance_date
-            .parse::<DateTime<Utc>>()
-            .map(|dt| dt.timestamp())
-            .unwrap_or(0);
-        groups
-            .entry((parent_id, ts))
-            .or_default()
-            .push((id, status, updated_at));
-    }
-
-    for mut items in groups.into_values() {
-        if items.len() < 2 {
-            continue;
-        }
-        items.sort_by(|a, b| {
-            exception_status_rank(&b.1)
-                .cmp(&exception_status_rank(&a.1))
-                .then_with(|| b.2.cmp(&a.2))
-        });
-        for (id, _, _) in items.into_iter().skip(1) {
-            delete_lesson_cascade(conn, &id)?;
+        let (id, inst, status, updated, created) = row.map_err(|e| e.to_string())?;
+        if parse_slot_key(parent_id, &inst, tz).as_ref() == Ok(&target) {
+            matches.push((id, status, updated, created));
         }
     }
-    Ok(())
+    if matches.is_empty() {
+        return Ok(None);
+    }
+    matches.sort_by(|a, b| exception_rank(&b.1, &b.2, &b.3, &b.0).cmp(&exception_rank(&a.1, &a.2, &a.3, &a.0)));
+    let keep = matches[0].0.clone();
+    let extra: Vec<String> = matches.into_iter().skip(1).map(|m| m.0).collect();
+    if !extra.is_empty() {
+        archive_rows(conn, "exception_dedupe", &extra)?;
+        for id in &extra {
+            delete_lesson_cascade(conn, id)?;
+        }
+    }
+    Ok(Some(keep))
 }
 
 pub(crate) fn archive_rows(
