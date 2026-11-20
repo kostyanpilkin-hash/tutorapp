@@ -503,25 +503,16 @@ fn evening_summary(t: &T, occs: &[Occ], _tz: chrono_tz::Tz, fields: &[String]) -
 }
 
 fn debts_message(t: &T, conn: &Connection) -> Result<String, String> {
-    // Same logic as Finance → debts: completed or no-show, effective payment
-    // status not 'paid', effective cost > 0; grouped per student and currency.
-    let mut stmt = conn
-        .prepare(
-            "SELECT s.name, COUNT(*), SUM(COALESCE(ls.cost, l.cost)) AS total,
-                    COALESCE(NULLIF(ls.currency,''), NULLIF(l.currency,''), 'USD') AS cur
-             FROM lessons l
-             INNER JOIN lesson_students ls ON ls.lesson_id = l.id
-             INNER JOIN students s ON s.id = ls.student_id
-             WHERE l.status IN ('completed','no_show')
-               AND COALESCE(NULLIF(ls.payment_status,''), l.payment_status) != 'paid'
-               AND COALESCE(ls.cost, l.cost) > 0
-             GROUP BY s.name, cur ORDER BY s.name",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows: Vec<(String, i64, f64, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
+    // Exactly the Finance → Debts list, grouped per student and currency.
+    let mut grouped: std::collections::BTreeMap<(String, String), (i64, f64)> = std::collections::BTreeMap::new();
+    for d in crate::commands::finance::debt_lessons(conn)? {
+        let e = grouped.entry((d.student_name, d.currency)).or_insert((0, 0.0));
+        e.0 += 1;
+        e.1 += d.cost;
+    }
+    let rows: Vec<(String, i64, f64, String)> = grouped
+        .into_iter()
+        .map(|((name, cur), (n, sum))| (name, n, sum, cur))
         .collect();
     if rows.is_empty() {
         return Ok(t.no_debts().to_string());

@@ -105,6 +105,17 @@ pub fn scan_exception_slots(conn: &Connection, tz: Tz) -> Result<SlotScan, Strin
     Ok(scan)
 }
 
+/// Exception rows that lose their slot to a better row of the same slot.
+/// Every read projection (calendar, finance, debts, Telegram) must ignore
+/// them so a duplicate is never counted twice; nothing is deleted.
+pub fn shadowed_exception_ids(conn: &Connection, tz: Tz) -> Result<std::collections::HashSet<String>, String> {
+    Ok(scan_exception_slots(conn, tz)?
+        .duplicates
+        .into_iter()
+        .flat_map(|g| g.extra)
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

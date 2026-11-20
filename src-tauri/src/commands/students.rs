@@ -349,6 +349,10 @@ pub fn get_student_finance(
     state: tauri::State<AppState>,
     student_id: String,
 ) -> Result<StudentFinance, String> {
+    state.pool.with_conn(|conn| student_finance(conn, &student_id))
+}
+
+pub(crate) fn student_finance(conn: &rusqlite::Connection, student_id: &str) -> Result<StudentFinance, String> {
     use crate::recurrence::is_weekly;
     use chrono::{DateTime, Duration, Utc};
 
@@ -365,7 +369,7 @@ pub fn get_student_finance(
         payment: String,
     }
 
-    state.pool.with_conn(|conn| {
+    {
         let sql = r#"SELECT l.id, l.start_at, l.status, l.recurrence_rule,
                         l.recurrence_parent_id, l.recurrence_instance_date,
                         COALESCE(ls.cost, l.cost) AS cost,
@@ -393,14 +397,18 @@ pub fn get_student_finance(
             })
             .map_err(|e| e.to_string())?;
 
+        let tz = crate::occurrences::timezone(conn);
+        let shadowed = crate::domain::identity::shadowed_exception_ids(conn, tz)?;
         let mut lessons: Vec<RowFin> = Vec::new();
         for row in rows {
             let (id, start_at, status, recurrence_rule, parent_id, instance_date, cost, currency, payment) =
                 row.map_err(|e| e.to_string())?;
-            let cost = cost.unwrap_or(0.0);
-            if cost <= 0.0 {
+            if shadowed.contains(&id) {
                 continue;
             }
+            // Zero/null-price rows stay until slots are resolved (a free
+            // exception suppresses its parent slot); classify adds no money.
+            let cost = cost.unwrap_or(0.0);
             let start_at: DateTime<Utc> = start_at
                 .parse::<DateTime<Utc>>()
                 .map_err(|e: chrono::ParseError| e.to_string())?;
@@ -417,7 +425,6 @@ pub fn get_student_finance(
             });
         }
 
-        let tz = crate::occurrences::timezone(conn);
         let now = Utc::now();
         let from = now - Duration::days(365);
         let to = now + Duration::days(90);
@@ -588,7 +595,7 @@ pub fn get_student_finance(
             debt: to_vec(debt_map),
             expected: to_vec(expected_map),
         })
-    })
+    }
 }
 
 

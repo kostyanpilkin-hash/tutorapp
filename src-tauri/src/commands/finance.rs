@@ -420,14 +420,17 @@ pub(crate) fn finance_report(
             .map_err(|e| e.to_string())?;
 
         let mut lesson_map: BTreeMap<String, LessonFinanceBase> = BTreeMap::new();
+        let shadowed = crate::domain::identity::shadowed_exception_ids(conn, tz)?;
 
         for row in rows {
             let (id, subject, start_at, status, recurrence_rule, recurrence_parent_id, recurrence_instance_date, cost, currency, payment_status) =
                 row.map_err(|e| e.to_string())?;
-            let cost = cost.unwrap_or(0.0);
-            if cost <= 0.0 {
+            if shadowed.contains(&id) {
                 continue;
             }
+            // Zero/null-price rows are kept until slots are resolved: a free
+            // exception still suppresses its parent slot. They add no money.
+            let cost = cost.unwrap_or(0.0);
             let currency = currency.unwrap_or_else(|| "USD".to_string());
             let start_at: DateTime<Utc> = start_at
                 .parse::<DateTime<Utc>>()
@@ -682,9 +685,13 @@ pub(crate) fn debt_lessons(conn: &Connection) -> Result<Vec<DebtEntry>, String> 
             })
             .map_err(|e| e.to_string())?;
 
+        let shadowed = crate::domain::identity::shadowed_exception_ids(conn, crate::occurrences::timezone(conn))?;
         let mut out = Vec::new();
         for row in rows {
-            out.push(row.map_err(|e| e.to_string())?);
+            let entry = row.map_err(|e| e.to_string())?;
+            if !shadowed.contains(&entry.lesson_id) {
+                out.push(entry);
+            }
         }
         Ok(out)
     }
@@ -756,6 +763,82 @@ mod tests {
             .iter()
             .find(|e| e.currency == currency)
             .map(|e| e.amount)
+    }
+
+    #[expect(clippy::too_many_arguments, reason = "test fixture builder; one argument per lesson column")]
+    fn series_row(
+        conn: &Connection,
+        id: &str,
+        start: &str,
+        status: &str,
+        cost: Option<f64>,
+        rule: Option<&str>,
+        parent: Option<&str>,
+        idate: Option<&str>,
+        updated: &str,
+    ) {
+        conn.execute(
+            "INSERT INTO lessons (id, student_name, subject, start_at, duration_minutes, cost, currency, notes, materials,
+                                  status, payment_status, recurrence_rule, recurrence_parent_id, recurrence_instance_date, created_at, updated_at)
+             VALUES (?1, 'Ivan', 'Math', ?2, 60, ?3, 'USD', '', '', ?4, 'unpaid', ?5, ?6, ?7, ?8, ?8)",
+            params![id, start, cost, status, rule, parent, idate, updated],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO lesson_students (lesson_id, student_id, cost, currency, payment_status)
+             VALUES (?1, 's1', ?2, 'USD', 'unpaid')",
+            params![id, cost],
+        )
+        .unwrap();
+    }
+
+    fn sum(v: &[CurrencyAmount], currency: &str) -> f64 {
+        v.iter().filter(|a| a.currency == currency).map(|a| a.amount).sum()
+    }
+
+    fn slot_report(conn: &Connection) -> FinanceReport {
+        finance_report(
+            conn,
+            "custom",
+            Utc::now(),
+            Some("2026-03-09T00:00:00Z".parse().unwrap()),
+            Some("2026-03-09T23:59:59Z".parse().unwrap()),
+            chrono_tz::UTC,
+        )
+        .unwrap()
+    }
+
+    fn period_debt(r: &FinanceReport) -> f64 {
+        r.by_subject.iter().map(|s| s.debt).sum()
+    }
+
+    /// Two exception rows claim the same Mar 9 slot (same local date, keys in
+    /// different formats) — the calendar shows one; finance must count one.
+    #[test]
+    fn duplicate_slot_rows_are_counted_once_everywhere() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        series_row(&conn, "p1", "2026-03-02T10:00:00Z", "scheduled", Some(100.0), Some("FREQ=WEEKLY;BYDAY=MO;COUNT=2"), None, None, "2026-03-01T00:00:00Z");
+        series_row(&conn, "exA", "2026-03-09T10:00:00Z", "completed", Some(100.0), None, Some("p1"), Some("2026-03-09T10:00:00.000Z"), "2026-03-10T00:00:00Z");
+        series_row(&conn, "exB", "2026-03-09T10:00:00Z", "completed", Some(100.0), None, Some("p1"), Some("2026-03-09"), "2026-03-09T00:00:00Z");
+
+        let debts = debt_lessons(&conn).unwrap();
+        assert_eq!(debts.iter().map(|d| d.lesson_id.as_str()).collect::<Vec<_>>(), ["exA"]);
+        assert_eq!(period_debt(&slot_report(&conn)), 100.0);
+        assert_eq!(sum(&slot_report(&conn).debt, "USD"), 100.0);
+        let sf = crate::commands::students::student_finance(&conn, "s1").unwrap();
+        assert_eq!(sum(&sf.debt, "USD"), 100.0);
+    }
+
+    /// F05: a zero-price exception must suppress the paid parent slot before
+    /// the cost filter drops it — no phantom 100 from the template.
+    #[test]
+    fn zero_price_exception_suppresses_parent_slot() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        series_row(&conn, "p1", "2026-03-02T10:00:00Z", "completed", Some(100.0), Some("FREQ=WEEKLY;BYDAY=MO;COUNT=2"), None, None, "2026-03-01T00:00:00Z");
+        series_row(&conn, "ex0", "2026-03-09T10:00:00Z", "completed", Some(0.0), None, Some("p1"), Some("2026-03-09T10:00:00.000Z"), "2026-03-10T00:00:00Z");
+        assert_eq!(period_debt(&slot_report(&conn)), 0.0);
     }
 
     #[test]
