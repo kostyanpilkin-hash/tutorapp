@@ -4,6 +4,11 @@
 
 ## 2026-11-20
 
+### Релиз-пайплайн
+- Репозиторий `tutorapp` стал публичным: релизы и `latest.json` теперь публикуются в нём самом (GITHUB_TOKEN, без `tutorapp_public`); endpoint автообновления переведён на `tutorapp/releases/latest/download/latest.json`
+- Для клиентов ≤0.2.2, чей endpoint ещё смотрит в `tutorapp_public`, воркфлоу зеркалирует туда `latest.json` (ссылки внутри — на tutorapp): они обновятся один раз и дальше пойдут по новому endpoint
+- Версия 0.2.3
+
 ### Инструменты
 - Подключён graphify — knowledge graph кодовой базы (tree-sitter AST, без LLM): граф в `graphify-out/` (1269 узлов / 3514 рёбер / 67 сообществ), git-хуки автообновления на commit/checkout/merge/rewrite, merge-драйвер для graph.json, правила использования в AGENTS.md. Ограничение: мост `invoke() ↔ #[tauri::command]` не моделируется — фронт и бэк в графе не связаны.
 

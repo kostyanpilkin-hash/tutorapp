@@ -1,7 +1,10 @@
 name: Release
 
-# Push a tag like v0.2.1 to build installers for Windows and macOS and
-# publish them as a release in the public repository tutorapp_public.
+# Push a tag like v0.2.3 to build installers for Windows and macOS and
+# publish them as a release in this repository (tutorapp, public).
+# A latest.json-only mirror is also uploaded to tutorapp_public so that
+# clients <=0.2.2 (whose updater endpoint still points there) can update
+# once and switch to the new endpoint baked into this release.
 on:
   push:
     tags: ["v*"]
@@ -10,7 +13,7 @@ on:
       release_tag:
         description: Release version tag
         required: true
-        default: v0.2.1
+        default: v0.2.3
         type: string
 
 jobs:
@@ -19,17 +22,17 @@ jobs:
     outputs:
       release_id: ${{ steps.release.outputs.id }}
     steps:
-      - name: Prepare public draft release
+      - name: Prepare draft release (tutorapp)
         id: release
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           [[ "$TAG" == v* ]] || { echo "Run this workflow on a version tag"; exit 1; }
-          REPO=kostyanpilkin-hash/tutorapp_public
-          SHA=$(gh api "repos/$REPO/branches/main" --jq '.commit.sha')
+          REPO=kostyanpilkin-hash/tutorapp
+          SHA=${{ github.sha }}
           RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
           if [[ -z "$RELEASES" ]]; then
             RELEASES=$(gh api --method POST "repos/$REPO/releases" \
@@ -40,6 +43,23 @@ jobs:
           [[ "$RELEASES" =~ ^[0-9]+$ ]]
           echo "id=$RELEASES" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare legacy mirror draft (tutorapp_public)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          REPO=kostyanpilkin-hash/tutorapp_public
+          SHA=$(gh api "repos/$REPO/branches/main" --jq '.commit.sha')
+          RELEASES=$(gh api --paginate "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [[ -z "$RELEASES" ]]; then
+            gh api --method POST "repos/$REPO/releases" \
+              -f tag_name="$TAG" -f target_commitish="$SHA" \
+              -f name="TutorApp $TAG" -f body="Зеркало latest.json для клиентов <=0.2.2." \
+              -F draft=true --jq '.id'
+          fi
+
   build:
     needs: prepare
     strategy:
@@ -48,9 +68,9 @@ jobs:
         include:
           - platform: windows-latest
             args: "--bundles msi,nsis"
-          # macOS runners can sit in queue for 15+ min and get cancelled on
-          # private repos; a cancelled leg must not block the release —
-          # latest.json will just contain Windows until a rerun lands it.
+          # macOS runners can sit in queue for 15+ min; a cancelled leg must
+          # not block the release — latest.json will just contain Windows
+          # until a rerun lands it.
           # macos-14 pinned: 'macos-latest' currently migrates to macos-15
           # and its pool is the most contended; macos-14 (arm64) queues faster.
           - platform: macos-14
@@ -78,13 +98,12 @@ jobs:
 
       - uses: tauri-apps/tauri-action@v0
         env:
-          # Fine-grained PAT with Contents: Read & Write on tutorapp_public only.
-          GITHUB_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           owner: kostyanpilkin-hash
-          repo: tutorapp_public
+          repo: tutorapp
           releaseId: ${{ needs.prepare.outputs.release_id }}
           tagName: ${{ inputs.release_tag || github.ref_name }}
           releaseName: "TutorApp ${{ inputs.release_tag || github.ref_name }}"
@@ -100,11 +119,11 @@ jobs:
     needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
-      - name: Assemble and upload latest.json
+      - name: Assemble and upload latest.json (tutorapp)
         env:
-          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.release_tag || github.ref_name }}
-          REPO: kostyanpilkin-hash/tutorapp_public
+          REPO: kostyanpilkin-hash/tutorapp
         run: |
           set -euo pipefail
           mkdir -p sig
@@ -140,3 +159,17 @@ jobs:
             > latest.json
           cat latest.json
           gh release upload "$TAG" latest.json --repo "$REPO" --clobber
+
+      # Legacy clients (<=0.2.2) poll tutorapp_public for latest.json. The
+      # asset URLs inside point at tutorapp — public now, so binaries are
+      # fetched from there; only the manifest itself is mirrored.
+      - name: Mirror latest.json to tutorapp_public
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+          MAIN_REPO: kostyanpilkin-hash/tutorapp
+          LEGACY_REPO: kostyanpilkin-hash/tutorapp_public
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$MAIN_REPO" --pattern "latest.json" --dir . --clobber
+          gh release upload "$TAG" latest.json --repo "$LEGACY_REPO" --clobber

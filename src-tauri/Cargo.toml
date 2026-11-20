@@ -1,6 +1,6 @@
 [package]
 name = "tutor-app"
-version = "0.2.2"
+version = "0.2.3"
 description = "Tutor scheduling desktop app"
 authors = ["TutorApp"]
 edition = "2021"
