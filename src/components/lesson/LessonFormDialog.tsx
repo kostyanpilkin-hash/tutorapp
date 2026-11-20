@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { format } from "date-fns";
 import type { Lesson, LessonInput, LessonStudentInput, RecurrenceEditScope } from "@/types/lesson";
@@ -11,6 +11,7 @@ import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId,
 import { hrefFor, textHasLinks } from "@/lib/linkify";
 import { buildParticipantInputs, templateParticipants } from "@/lib/lessonMutation";
 import { lessonEnd } from "@/lib/timeInput";
+import { conflictFor, createGeneration, mayForce, overlapKey, singleFlight, type OverlapConflict, type OverlapPayload } from "@/lib/dialogOperation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { keys, invalidateAppData } from "@/lib/queryKeys";
 import { useShallow } from "zustand/react/shallow";
@@ -131,7 +132,12 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
   const [recurrenceEnd, setRecurrenceEnd] = useState<"none" | "until" | "count">("none");
   const [recurrenceUntil, setRecurrenceUntil] = useState("");
   const [recurrenceCount, setRecurrenceCount] = useState("10");
-  const [overlapWarning, setOverlapWarning] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<(OverlapConflict & { scope?: RecurrenceEditScope }) | null>(null);
+  const [saving, setSaving] = useState(false);
+  const confirmedRef = useRef<OverlapConflict | null>(null);
+  const [session] = useState(createGeneration);
+  const sessionRef = useRef(0);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [customGroupCosts, setCustomGroupCosts] = useState(false);
 
@@ -175,6 +181,10 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
   const displayStudentName = selectedStudents.map((s) => s.name).join(", ");
 
   const startAtIso = date && time ? parseLocalDateTime(date, time).toISOString() : "";
+  // A conflict is shown only for the payload it was found for.
+  const visibleConflict = conflict
+    ? conflictFor(conflict, { startAt: startAtIso, durationMinutes: duration, scope: conflict.scope ?? null })
+    : null;
 
   const timezoneHints = useMemo(() => {
     if (!startAtIso) return [];
@@ -281,13 +291,19 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       setRecurrenceCount("10");
       setReminderMins([...new Set(sorted)]);
     }
-    setOverlapWarning(null);
+    setFieldError(null);
+    setConflict(null);
+    confirmedRef.current = null;
     setTimeValid(true);
     setPendingScope(null);
     setScopeOpen(false);
     setPaymentPromptOpen(false);
     setPickerOpen(false);
   }, [open, lesson, initialDate, initialStudentIds, defaultDuration, defaultReminders]);
+
+  useEffect(() => {
+    sessionRef.current = session.begin();
+  }, [open, lesson?.id, session]);
 
   const applyStudentDefaults = (ids: string[]) => {
     const picked = allStudents.filter((s) => ids.includes(s.id));
@@ -358,35 +374,41 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
     };
   };
 
-  const doSave = async (scope?: RecurrenceEditScope, payStatus?: PaymentStatus) => {
-    if (selectedIds.length === 0) {
-      setOverlapWarning(t("students.pickRequired"));
-      return;
-    }
-    const input = buildInput(payStatus ?? paymentStatus);
-    const excludeId = !lesson
-      ? undefined
-      : scope === "all" || scope === "thisAndFuture"
-        ? parentLessonId(lesson)
-        : lesson.id;
-    const overlaps = await api.checkOverlaps(
-      input.startAt,
-      input.durationMinutes,
-      excludeId,
-    );
-    if (overlaps.length > 0 && !overlapWarning) {
-      setOverlapWarning(
-        `${t("lesson.overlap")}: ${overlaps.map((o) => o.studentName).join(", ")}. ${t("lesson.overlapConfirm")}`,
-      );
-      return;
-    }
-    if (overlaps.length > 0 || overlapWarning) {
-      input.force = true;
-    }
+  const overlapPayload = (startAt: string, durationMinutes: number, scope?: RecurrenceEditScope): OverlapPayload => ({
+    startAt,
+    durationMinutes,
+    scope: scope ?? null,
+  });
 
-    if (lesson && !scope && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
-      setScopeOpen(true);
+  const doSave = async (scope?: RecurrenceEditScope, payStatus?: PaymentStatus) => {
+    const sid = sessionRef.current;
+    const live = () => session.isCurrent(sid);
+    if (selectedIds.length === 0) {
+      setFieldError(t("students.pickRequired"));
       return;
+    }
+    setFieldError(null);
+    const input = buildInput(payStatus ?? paymentStatus);
+    const payload = overlapPayload(input.startAt, input.durationMinutes, scope);
+    const showConflict = (names: string) => {
+      confirmedRef.current = null;
+      setConflict({ key: overlapKey(payload), names, confirmed: false, scope });
+    };
+    if (mayForce(confirmedRef.current, payload)) {
+      input.force = true;
+    } else {
+      const excludeId = !lesson
+        ? undefined
+        : scope === "all" || scope === "thisAndFuture"
+          ? parentLessonId(lesson)
+          : lesson.id;
+      const overlaps = await api.checkOverlaps(input.startAt, input.durationMinutes, excludeId);
+      if (!live()) return;
+      if (overlaps.length > 0) {
+        showConflict(overlaps.map((o) => o.studentName).join(", "));
+        return;
+      }
+      setConflict(null);
     }
 
     try {
@@ -463,25 +485,47 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
     } catch (e) {
       const names = overlapNamesFromError(e);
       if (names !== null) {
-        setOverlapWarning(`${t("lesson.overlap")}: ${names}. ${t("lesson.overlapConfirm")}`);
+        if (live()) showConflict(names);
         return;
       }
       throw e;
     }
 
+    // Committed: later failures must not invite a second save (a new lesson would be duplicated).
     for (const s of selectedStudents) {
       const next = lessonNotesDraft[s.id] ?? s.notes ?? "";
       if (next === (s.notes ?? "")) continue;
-      await api.updateStudent(s.id, { ...studentToInput(s), notes: next });
+      await api.updateStudent(s.id, { ...studentToInput(s), notes: next }).catch(() => undefined);
     }
-
-    await invalidateAppData(queryClient);
+    try {
+      await invalidateAppData(queryClient);
+    } catch {
+      useToastStore.getState().error(t("lesson.savedRefreshFailed"));
+    }
+    if (!live()) return;
     onSaved();
     onClose();
   };
 
+  const [saveFlight] = useState(() =>
+    singleFlight(async (run: () => Promise<void>) => {
+      setSaving(true);
+      try {
+        await run();
+      } catch {
+        // api.call has already shown the error; the draft stays for a retry.
+      } finally {
+        setSaving(false);
+      }
+    }),
+  );
+
   const save = async (scope?: RecurrenceEditScope) => {
-    if (!timeValid) return;
+    if (!timeValid || saveFlight.isRunning()) return;
+    if (lesson && !scope && (lesson.recurrenceRule || isRecurrenceInstance(lesson))) {
+      setScopeOpen(true);
+      return;
+    }
     const becomingCompleted = status === "completed" && lesson?.status !== "completed";
     const hasBillableCost = Number(cost) > 0 || Object.values(studentCosts).some((item) => Number(item.cost) > 0);
     if (becomingCompleted && hasBillableCost && paymentStatus === "unpaid") {
@@ -489,15 +533,22 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       setPendingScope(scope ?? null);
       return;
     }
-    await doSave(scope);
+    await saveFlight(() => doSave(scope));
+  };
+
+  const confirmOverlap = () => {
+    if (!conflict) return;
+    confirmedRef.current = { ...conflict, confirmed: true };
+    void save(conflict.scope);
   };
 
   const handlePaymentChoice = async (paid: boolean) => {
     setPaymentPromptOpen(false);
     const ps: PaymentStatus = paid ? "paid" : "unpaid";
     setPaymentStatus(ps);
-    await doSave(pendingScope ?? undefined, ps);
+    const scope = pendingScope ?? undefined;
     setPendingScope(null);
+    await saveFlight(() => doSave(scope, ps));
   };
 
   const remove = async () => {
@@ -995,15 +1046,18 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
           </Tabs>
           </div>
           <div className="border-t px-6 py-3">
-            {overlapWarning && (
-              <div className="space-y-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800">
-                <p>{overlapWarning}</p>
+            {fieldError && (
+              <p role="alert" className="text-sm text-destructive">{fieldError}</p>
+            )}
+            {visibleConflict && (
+              <div role="alert" className="space-y-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800">
+                <p>{`${t("lesson.overlap")}: ${visibleConflict.names}. ${t("lesson.overlapConfirm")}`}</p>
                 <Button
                   size="sm"
                   variant="outline"
                   className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
-                  disabled={!timeValid}
-                  onClick={() => void save()}
+                  disabled={!timeValid || saving}
+                  onClick={confirmOverlap}
                 >
                   {t("lesson.saveAnyway")}
                 </Button>
@@ -1027,7 +1081,9 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
               )}
               <div className="ml-auto flex gap-2">
                 <Button variant="outline" onClick={onClose}>{t("common.cancel")}</Button>
-                <Button disabled={!timeValid} onClick={() => void save()}>{t("lesson.save")}</Button>
+                <Button disabled={!timeValid || saving} aria-busy={saving} onClick={() => void save()}>
+                  {saving ? t("lesson.saving") : t("lesson.save")}
+                </Button>
               </div>
             </div>
           </div>

@@ -295,11 +295,11 @@ API кодирует overlap префиксом строки и глобальн
 **Files:** новые `src/lib/dialogOperation.ts`, `ipcErrors.ts` + tests; `api.ts`, LessonFormDialog, RescheduleDialog, StudentFormDialog; `types/generated.ts` через ts-rs при typed error.
 **Interfaces:** `OperationState = idle | choosingScope | validating | confirmingOverlap | saving | savedRefreshError | error`; каждая операция несёт `sessionId` и `requestId`. Подтверждение conflict связано с неизменяемым draft snapshot, а не boolean warning. Поздний async result применяется только к своей session.
 
-- [ ] Tests: `double_submit_sends_one_mutation`; `old_request_cannot_close_new_dialog`; `overlap_for_old_time_is_ignored`; `missing_student_error_does_not_authorize_force`; `changed_duration_invalidates_confirmation`; `retry_preserves_draft`.
-- [ ] Разделить fieldErrors, conflictPreview, transportError. Проверка required → выбор scope → preview → explicit confirmation → apply. Scope не хранить между независимыми Save.
-- [ ] Snapshot draft на submit; на время saving блокировать повторный submit и редактирование применяемых полей либо отменять операцию до отправки. Не делать вид, что UI cancel отменил уже committed backend.
-- [ ] Ошибку перечитывания после commit показывать как refresh-error, не rollback. Все event handlers обрабатывают Promise rejection на понятном UI error boundary.
-- [ ] Проверка медленным mock IPC: change A→B, ответ A приходит последним; UI B не меняется. `npm test -- dialogOperation` + browser fixture.
+- [x] Tests (`src/lib/dialogOperation.test.ts`, 8): `double_submit_sends_one_mutation`, `retry_after_error_is_possible`, `old_request_cannot_close_new_dialog`, `overlap_for_old_time_is_ignored`, `missing_student_error_does_not_authorize_force`, `changed_duration_invalidates_confirmation` и др. Browser (mock IPC, `%TEMP%/tp-lifecycle.py`, `tp-resched-life.py`, `tp-student.py`) baseline → after: G1 update_lesson 2→1; G3 force без повторного подтверждения true→false; G4 форма B закрывалась поздним ответом A → остаётся; create_student при двойном клике 2→1; G5 (ошибка→повтор, черновик) уже работал и остался.
+- [x] Разделить fieldErrors, conflict, transport error. Порядок: required → scope → payment → preview → explicit confirmation → apply. Конфликт хранит key (startAt|duration|scope); показывается только для текущего payload.
+- [~] На время saving повторный submit блокирован (`singleFlight`, ref-based — работает до перерисовки). Редактирование полей во время saving не блокируется; draft snapshot берётся в момент submit (buildInput). Отмены уже отправленной операции нет и не заявляется.
+- [x] Ошибку после commit (refresh / заметки ученика) показываем, не предлагая повторной записи. Rejection в обработчиках сохранения перехвачены (api.call уже показал toast).
+- [~] Проверка медленным mock IPC — сделана для LessonFormDialog (G4) и превью переноса. Типизированные IPC-ошибки (`ipcErrors.ts`) не сделаны — остаётся строковый `OVERLAP:` (Task 7). Открытие вкладки с ошибкой по Save не сделано (ошибки сейчас только в футере).
 **Commit:** `fix: isolate dialog mutations and stale async results`.
 
 ### Task 5. Разблокировать time picker и доступность форм (F12, F13)

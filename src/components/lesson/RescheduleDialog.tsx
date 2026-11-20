@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { create } from "zustand";
@@ -10,6 +10,7 @@ import {
 } from "@/lib/lessonActions";
 import { parseLocalDateTime } from "@/lib/recurrence";
 import { lessonEnd, parseTimeInput } from "@/lib/timeInput";
+import { conflictFor, createGeneration, mayForce, overlapKey, singleFlight, type OverlapConflict, type PreviewState } from "@/lib/dialogOperation";
 import type { Lesson } from "@/types/lesson";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,8 +45,13 @@ export function RescheduleDialog() {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("10:00");
   const [scope, setScope] = useState<Scope>("this");
-  const [warning, setWarning] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreviewState>({ kind: "idle" });
+  const [conflict, setConflict] = useState<OverlapConflict | null>(null);
   const [saving, setSaving] = useState(false);
+  const confirmedRef = useRef<OverlapConflict | null>(null);
+  const [session] = useState(createGeneration);
+  const [previews] = useState(createGeneration);
+  const sessionRef = useRef(0);
   const [timeValid, setTimeValid] = useState(true);
   const [timePanelHost, setTimePanelHost] = useState<HTMLDivElement | null>(null);
 
@@ -61,80 +67,121 @@ export function RescheduleDialog() {
     setDate(format(start, "yyyy-MM-dd"));
     setTime(format(start, "HH:mm"));
     setScope("this");
-    setWarning(null);
-    setSaving(false);
+    setPreview({ kind: "idle" });
+    setConflict(null);
+    confirmedRef.current = null;
     setTimeValid(true);
   }, [lesson]);
+
+  useEffect(() => {
+    sessionRef.current = session.begin();
+  }, [lesson?.id, session]);
 
   const parsedTime = parseTimeInput(time);
   const start = date && parsedTime ? parseLocalDateTime(date, parsedTime) : null;
   const end = parsedTime && lesson ? lessonEnd(parsedTime, lesson.durationMinutes) : null;
   const endLabel = end ? (end.dayOffset > 0 ? `${end.end} (${t("timePicker.nextDay")})` : end.end) : "";
 
+  const payloadFor = (startAt: Date) => ({
+    startAt: startAt.toISOString(),
+    durationMinutes: lesson?.durationMinutes ?? 0,
+    scope,
+  });
+
   useEffect(() => {
-    if (!lesson) {
-      setWarning(null);
-      return;
-    }
     const parsed = parseTimeInput(time);
-    if (!date || !parsed) {
-      setWarning(null);
+    if (!lesson || !date || !parsed) {
+      previews.begin();
+      setPreview({ kind: "idle" });
       return;
     }
     const startIso = parseLocalDateTime(date, parsed).toISOString();
-    const excludeId = overlapExcludeId(
-      lesson,
-      scope === "series" ? "thisAndFuture" : "this",
-    );
+    const excludeId = overlapExcludeId(lesson, scope === "series" ? "thisAndFuture" : "this");
     const duration = lesson.durationMinutes;
+    const gen = previews.begin();
+    setPreview({ kind: "checking" });
     const timer = setTimeout(() => {
-      void api
+      api
         .checkOverlaps(startIso, duration, excludeId)
-        .then((overlaps) =>
-          setWarning(
+        .then((overlaps) => {
+          if (!previews.isCurrent(gen)) return;
+          setPreview(
             overlaps.length > 0
-              ? `${t("lesson.overlap")}: ${overlaps.map((o) => o.studentName).join(", ")}`
-              : null,
-          ),
-        )
-        .catch(() => setWarning(null));
+              ? { kind: "conflict", names: overlaps.map((o) => o.studentName).join(", ") }
+              : { kind: "clear" },
+          );
+        })
+        .catch(() => {
+          if (previews.isCurrent(gen)) setPreview({ kind: "error" });
+        });
     }, 300);
-    return () => clearTimeout(timer);
-  }, [lesson, date, time, scope, t]);
+    return () => {
+      clearTimeout(timer);
+      previews.begin();
+    };
+  }, [lesson, date, time, scope, previews]);
 
-  const save = async () => {
+  const [saveFlight] = useState(() =>
+    singleFlight(async (run: () => Promise<void>) => {
+      setSaving(true);
+      try {
+        await run();
+      } catch {
+        // api.call has already shown the error; the dialog stays for a retry.
+      } finally {
+        setSaving(false);
+      }
+    }),
+  );
+
+  const doSave = async () => {
     if (!lesson || !start || !timeValid) return;
-    setSaving(true);
-    try {
-      const excludeId = overlapExcludeId(
-        lesson,
-        scope === "series" ? "thisAndFuture" : "this",
-      );
+    const sid = sessionRef.current;
+    const live = () => session.isCurrent(sid);
+    const payload = payloadFor(start);
+    const showConflict = (names: string) => {
+      confirmedRef.current = null;
+      setConflict({ key: overlapKey(payload), names, confirmed: false });
+    };
+    const force = mayForce(confirmedRef.current, payload);
+    if (!force) {
       const overlaps = await api.checkOverlaps(
-        start.toISOString(),
-        lesson.durationMinutes,
-        excludeId,
+        payload.startAt,
+        payload.durationMinutes,
+        overlapExcludeId(lesson, scope === "series" ? "thisAndFuture" : "this"),
       );
-      const force = overlaps.length > 0;
+      if (!live()) return;
+      if (overlaps.length > 0) {
+        showConflict(overlaps.map((o) => o.studentName).join(", "));
+        return;
+      }
+    }
+    try {
       if (scope === "series") {
         await rescheduleSeriesFromInstance(lesson, start, { force });
         useToastStore.getState().success(t("lesson.seriesMovedToast"));
       } else {
-        await persistLessonChange(lesson, { startAt: start.toISOString() }, { force });
+        await persistLessonChange(lesson, { startAt: payload.startAt }, { force });
         useToastStore.getState().success(t("lesson.movedToast"));
       }
-      close();
     } catch (e) {
       const names = overlapNamesFromError(e);
-      if (names !== null) {
-        setWarning(`${t("lesson.overlap")}: ${names}. ${t("lesson.overlapConfirm")}`);
-      } else {
-        throw e;
-      }
-    } finally {
-      setSaving(false);
+      if (names === null) throw e;
+      if (live()) showConflict(names);
+      return;
     }
+    if (live()) close();
   };
+
+  const save = () => void saveFlight(doSave);
+
+  const confirmOverlap = () => {
+    if (!conflict) return;
+    confirmedRef.current = { ...conflict, confirmed: true };
+    save();
+  };
+
+  const visibleConflict = start ? conflictFor(conflict, payloadFor(start)) : null;
 
   const scopeCards: { value: Scope; title: string; desc: string }[] = [
     {
@@ -215,18 +262,37 @@ export function RescheduleDialog() {
               </div>
             )}
 
-            {warning && (
-              <div className="rounded-md bg-amber-50 p-2 text-sm text-amber-800">
-                <p>{warning}</p>
+            {visibleConflict ? (
+              <div role="alert" className="space-y-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800">
+                <p>{`${t("lesson.overlap")}: ${visibleConflict.names}. ${t("lesson.overlapConfirm")}`}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
+                  disabled={saving || !timeValid}
+                  onClick={confirmOverlap}
+                >
+                  {t("lesson.rescheduleAnyway")}
+                </Button>
               </div>
+            ) : (
+              <p className="text-sm text-muted-foreground" aria-live="polite">
+                {preview.kind === "checking" && t("lesson.overlapChecking")}
+                {preview.kind === "clear" && t("lesson.overlapFree")}
+                {preview.kind === "error" && t("lesson.overlapCheckFailed")}
+                {preview.kind === "conflict" && (
+                  <span className="text-amber-700 dark:text-amber-400">{`${t("lesson.overlap")}: ${preview.names}`}</span>
+                )}
+              </p>
             )}
 
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={close}>
                 {t("common.cancel")}
               </Button>
-              <Button type="button" disabled={!start || !timeValid || saving} onClick={() => void save()}>
-                {t("lesson.rescheduleAction")}
+              <Button type="button" disabled={!start || !timeValid || saving} aria-busy={saving} onClick={save}>
+                {saving ? t("lesson.saving") : t("lesson.rescheduleAction")}
               </Button>
             </div>
           </div>

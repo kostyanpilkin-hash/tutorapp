@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useQueryClient } from "@tanstack/react-query";
@@ -7,6 +7,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import type { Student, StudentInput } from "@/types/student";
 import { studentToInput } from "@/types/student";
 import { api } from "@/lib/api";
+import { createGeneration, singleFlight } from "@/lib/dialogOperation";
 import { CURRENCIES } from "@/lib/money";
 import { COMMON_TIMEZONES, getTimezoneOffset, messengerUrl } from "@/lib/contacts";
 import { StudentAvatar } from "./StudentAvatar";
@@ -124,13 +125,38 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
 
   const studentId = student?.id ?? createdId;
 
-  const handleLinkUpdate = async () => {
-    const targetId = student?.id ?? createdId;
+  const [session] = useState(createGeneration);
+  const sessionRef = useRef(0);
+  useEffect(() => {
+    sessionRef.current = session.begin();
+  }, [open, student?.id, session]);
+
+  const [flight] = useState(() =>
+    singleFlight(async (run: () => Promise<void>) => {
+      setSaving(true);
+      try {
+        await run();
+      } catch {
+        // api.call has already shown the error; the form stays for a retry.
+      } finally {
+        setSaving(false);
+      }
+    }),
+  );
+
+  // Every step of one save chain; a late step never touches a newer dialog session.
+  const runChain = (steps: (live: () => boolean) => Promise<void>) => {
+    const sid = sessionRef.current;
+    return flight(() => steps(() => session.isCurrent(sid)));
+  };
+
+  const handleLinkUpdate = async (live: () => boolean, targetId: string | null) => {
     if (!targetId || (previousLink ?? null) === (form.defaultLink ?? null)) {
-      onClose();
+      if (live()) onClose();
       return;
     }
     const count = await api.countStudentLessonsForLinkUpdate(targetId, form.defaultLink || null);
+    if (!live()) return;
     if (count === 0) {
       onClose();
       return;
@@ -139,7 +165,7 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
   };
 
   const save = async () => {
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || flight.isRunning()) return;
     const targetId = student?.id ?? createdId;
     const currencyChanged =
       targetId && form.defaultCurrency && form.defaultCurrency !== previousCurrency;
@@ -151,19 +177,16 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
       });
       return;
     }
-    setSaving(true);
-    try {
-      await doSave();
-      await handleLinkUpdate();
-    } finally {
-      setSaving(false);
-    }
+    await runChain(async (live) => {
+      const id = await doSave(live);
+      await handleLinkUpdate(live, id);
+    });
   };
 
-  const doSave = async () => {
-    if (!form.name.trim()) return;
-    setSaving(true);
-    try {
+  /** Writes the student; returns its id. */
+  const doSave = async (live: () => boolean): Promise<string | null> => {
+    if (!form.name.trim()) return null;
+    {
       const payload: StudentInput = {
         ...form,
         parents: [form.parentName, form.parentPhone, form.parentMessenger]
@@ -172,12 +195,15 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
       };
       if (student) {
         const saved = await api.updateStudent(student.id, payload);
-        onSaved(saved);
+        if (live()) onSaved(saved);
+        return saved.id;
       } else if (createdId) {
         const saved = await api.updateStudent(createdId, payload);
-        onSaved(saved);
+        if (live()) onSaved(saved);
+        return saved.id;
       } else {
         const saved = await api.createStudent(payload);
+        if (!live()) return saved.id;
         setCreatedId(saved.id);
         onSaved(saved);
         if (window.confirm(t("students.addPhotoNow"))) {
@@ -188,9 +214,8 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
             await invalidateAppData(queryClient);
           }
         }
+        return saved.id;
       }
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -207,13 +232,10 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
         newCurrency: dlg.newCurrency,
       });
     } else {
-      setSaving(true);
-      try {
-        await doSave();
-        await handleLinkUpdate();
-      } finally {
-        setSaving(false);
-      }
+      await runChain(async (live) => {
+        const id = await doSave(live);
+        await handleLinkUpdate(live, id);
+      });
     }
   };
 
@@ -223,15 +245,12 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     if (!dlg) return;
     const cost = Number(newCost);
     if (Number.isNaN(cost) || cost <= 0) return;
-    setSaving(true);
-    try {
-      await doSave();
-      await api.updateStudentLessonsCurrency(dlg.studentId, dlg.newCurrency, cost);
+    await runChain(async (live) => {
+      const id = await doSave(live);
+      await api.updateStudentLessonsCurrency(id ?? dlg.studentId, dlg.newCurrency, cost);
       await invalidateAppData(queryClient);
-      await handleLinkUpdate();
-    } finally {
-      setSaving(false);
-    }
+      await handleLinkUpdate(live, id);
+    });
   };
 
   const confirmLinkUpdate = async () => {
@@ -240,14 +259,11 @@ export function StudentFormDialog({ open, student, tutorTimezone, onClose, onSav
     if (!dlg) return;
     const targetId = student?.id ?? createdId;
     if (!targetId) return;
-    setSaving(true);
-    try {
+    await runChain(async (live) => {
       await api.updateStudentLessonsLink(targetId, dlg.link);
       await invalidateAppData(queryClient);
-    } finally {
-      setSaving(false);
-    }
-    onClose();
+      if (live()) onClose();
+    });
   };
 
   const skipLinkUpdate = () => {
