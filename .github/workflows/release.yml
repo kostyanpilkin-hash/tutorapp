@@ -71,12 +71,12 @@ jobs:
         include:
           - platform: windows-latest
             args: "--bundles msi,nsis"
-          # macOS runners can sit in queue for 15+ min; a cancelled leg must
-          # not block the release — latest.json will just contain Windows
-          # until a rerun lands it.
-          # macos-14 pinned: 'macos-latest' currently migrates to macos-15
-          # and its pool is the most contended; macos-14 (arm64) queues faster.
-          - platform: macos-14
+          # macOS runners can sit in queue for 15+ min and get cancelled;
+          # a cancelled leg must not block the release — latest.json will
+          # just contain Windows until a rerun lands it.
+          # macos-14 got stuck in queue-cancels on 2026-11-20 (4 attempts,
+          # zero steps); macos-15 is the newer arm64 pool.
+          - platform: macos-15
             args: "--target universal-apple-darwin"
             can-fail: true
     runs-on: ${{ matrix.platform }}
@@ -91,7 +91,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform != 'windows-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - uses: Swatinem/rust-cache@v2
         with:
