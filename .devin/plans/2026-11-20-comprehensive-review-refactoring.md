@@ -371,9 +371,9 @@ API кодирует overlap префиксом строки и глобальн
 **Files:** settings.rs, telegram/mod.rs, новый secrets.rs, students_bulk.rs photo handler, tauri.conf.json, capabilities/default.json, api.ts, SettingsPanel.
 **Interfaces:** `PublicSettings` — whitelist пользовательских настроек; `SecretStore` с OS adapter; `get_student_photo(student_id)` вместо произвольного path. UI получает bool tokenConfigured, не токен.
 
-- [ ] Tests get_settings не возвращает secret values; arbitrary config/db файлы внутри TutorApp отвергаются photo reader; изображения за пределами students root, traversal и symlink-to-outside отвергаются; допустимые PNG/JPEG проходят после проверки сигнатуры/лимита.
-- [ ] Ограничить asset scope каталогом фото, если asset protocol ещё необходим; не расширять CSP для удобства. Проверить macOS/Windows пути и canonicalization.
-- [ ] OS storage dependency отдельно согласовать (пользователь ранее запретил новые установки в ходе ревью). Если не одобрено — сначала whitelist и photo fix; plaintext-at-rest отметить как остающийся риск, не объявлять исправленным.
+- [x] Tests `get_settings_does_not_return_secret_values`, `ui_cannot_overwrite_backend_settings` (whitelist чтения и записи — set_setting раньше позволял перезаписать tg_token/phone_key/флаги миграций); `photo_reader_serves_only_images_in_students_folder` (tutor.db, settings.json, `..`-traversal, подмена .png, каталог — отвергаются), `photo_reader_rejects_oversized_files`. Symlink-to-outside отдельно не тестировался (на Windows нужны права), покрыт canonicalize + starts_with. На рабочей БД (read-only): все Nphoto_path лежат в `TutorApp\students`.
+- [x] Asset scope сужен до `$DATA/TutorApp/students/**` (прежний `$APPDATA/TutorApp/**` в Tauri 2 = `…/com.tutor.app/TutorApp` — не совпадал с реальной папкой); фронтенд asset-протокол не использует (фото через data URL). CSP не менялся. macOS-путь не проверен нативно.
+- [ ] OS storage dependency — не одобрена (2026-11-20). Сделаны whitelist и photo fix; plaintext токен в БД и в snapshot-копиях — остающийся риск, не исправлен.
 - [ ] Миграция секрета: записать→прочитать/сравнить локально→пометить migration success→удалить старое значение внутри контролируемой операции. Ошибка keychain оставляет рабочую конфигурацию, без логирования значений.
 - [ ] Проверка на fixture; реальные токены не запрашивать в чат и не печатать. Native keychain verification владелец подтверждает на обеих ОС.
 **Commit:** photo/settings минимизация отдельно от secret-storage migration.

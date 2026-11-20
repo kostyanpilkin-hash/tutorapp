@@ -292,28 +292,34 @@ pub fn apply_prepaid_lessons(
 
 #[tauri::command]
 pub fn get_student_photo_data_url(path: String) -> Result<String, String> {
+    photo_data_url(&app_data_dir().join("students"), std::path::Path::new(&path))
+}
+
+const MAX_PHOTO_BYTES: u64 = 15 * 1024 * 1024;
+
+/// Reads a student photo as a data URL. Only regular image files inside
+/// `root` (the students photo folder) are served — not the database or any
+/// other file of the app data directory.
+fn photo_data_url(root: &std::path::Path, path: &std::path::Path) -> Result<String, String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    use std::path::PathBuf;
 
-    let allowed_root = app_data_dir()
-        .canonicalize()
-        .unwrap_or_else(|_| app_data_dir());
-    let file_path = PathBuf::from(&path)
-        .canonicalize()
-        .map_err(|e| e.to_string())?;
-    if !file_path.starts_with(&allowed_root) {
-        return Err("Invalid file path".to_string());
+    let invalid = || "Invalid file path".to_string();
+    let root = root.canonicalize().map_err(|_| invalid())?;
+    let file_path = path.canonicalize().map_err(|_| invalid())?;
+    if !file_path.starts_with(&root) || !file_path.is_file() {
+        return Err(invalid());
     }
-    if !file_path.exists() {
-        return Err("File not found".to_string());
+    let size = fs::metadata(&file_path).map_err(|e| e.to_string())?.len();
+    if size > MAX_PHOTO_BYTES {
+        return Err("Photo is too large".to_string());
     }
-
     let bytes = fs::read(&file_path).map_err(|e| e.to_string())?;
-    let mime = match file_path.extension().and_then(|e| e.to_str()) {
-        Some("png") => "image/png",
-        Some("webp") => "image/webp",
-        Some("gif") => "image/gif",
-        _ => "image/jpeg",
+    let mime = match bytes.as_slice() {
+        [0x89, b'P', b'N', b'G', ..] => "image/png",
+        [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
+        [b'G', b'I', b'F', b'8', ..] => "image/gif",
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => "image/webp",
+        _ => return Err("Not an image".to_string()),
     };
     Ok(format!("data:{};base64,{}", mime, STANDARD.encode(bytes)))
 }
@@ -427,5 +433,53 @@ mod tests {
         let now = Utc::now().to_rfc3339();
         let count = count_student_lessons_for_link_update_conn(&conn, "s1", Some("https://meet"), &now).unwrap();
         assert_eq!(count, 0);
+    }
+}
+
+#[cfg(test)]
+mod photo_tests {
+    use super::*;
+
+    struct Tmp(std::path::PathBuf);
+    impl Drop for Tmp {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// app_data/{tutor.db, settings.json, students/{ok.png, fake.png}}
+    fn photo_fixture() -> (Tmp, std::path::PathBuf) {
+        let base = std::env::temp_dir().join(format!("tutor-photo-test-{}", uuid::Uuid::new_v4()));
+        let students = base.join("students");
+        fs::create_dir_all(&students).unwrap();
+        fs::write(base.join("tutor.db"), b"SQLite format 3\0secret rows").unwrap();
+        fs::write(base.join("settings.json"), b"{\"token\":\"x\"}").unwrap();
+        fs::write(students.join("ok.png"), [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]).unwrap();
+        fs::write(students.join("fake.png"), b"SQLite format 3\0").unwrap();
+        (Tmp(base), students)
+    }
+
+    #[test]
+    fn photo_reader_serves_only_images_in_students_folder() {
+        let (tmp, students) = photo_fixture();
+        let ok = photo_data_url(&students, &students.join("ok.png")).unwrap();
+        assert!(ok.starts_with("data:image/png;base64,"));
+        // The database and other app files next to the photo folder are refused.
+        assert!(photo_data_url(&students, &tmp.0.join("tutor.db")).is_err());
+        assert!(photo_data_url(&students, &tmp.0.join("settings.json")).is_err());
+        assert!(photo_data_url(&students, &students.join("..").join("tutor.db")).is_err());
+        // A non-image renamed to .png is refused by its signature.
+        assert_eq!(photo_data_url(&students, &students.join("fake.png")).unwrap_err(), "Not an image");
+        assert!(photo_data_url(&students, &students).is_err());
+        assert!(photo_data_url(&students, &students.join("missing.png")).is_err());
+    }
+
+    #[test]
+    fn photo_reader_rejects_oversized_files() {
+        let (_tmp, students) = photo_fixture();
+        let big = students.join("big.jpg");
+        let f = fs::File::create(&big).unwrap();
+        f.set_len(MAX_PHOTO_BYTES + 1).unwrap();
+        assert_eq!(photo_data_url(&students, &big).unwrap_err(), "Photo is too large");
     }
 }
