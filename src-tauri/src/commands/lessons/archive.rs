@@ -57,6 +57,60 @@ pub(crate) fn dedupe_exceptions_for_instance(
     Ok(Some(keep))
 }
 
+const DEDUPE_MIGRATION_KEY: &str = "migration_exception_slot_dedupe_v1";
+
+/// One-time cleanup of duplicate exception rows (same parent + local date).
+/// Only the rows `identity::scan_exception_slots` marks as `extra` are
+/// touched: archived first (restorable via `restore_lesson_archive`), then
+/// deleted, all in one transaction together with the done-flag. Invalid keys
+/// are never touched. The caller must take a verified snapshot first.
+/// Returns the number of archived rows.
+pub(crate) fn exception_dedupe_done(conn: &Connection) -> bool {
+    conn.query_row("SELECT 1 FROM settings WHERE key = ?1", params![DEDUPE_MIGRATION_KEY], |_| Ok(()))
+        .is_ok()
+}
+
+pub(crate) fn run_exception_dedupe_migration(conn: &Connection) -> Result<usize, String> {
+    if exception_dedupe_done(conn) {
+        return Ok(0);
+    }
+    conn.execute_batch("BEGIN IMMEDIATE").map_err(|e| e.to_string())?;
+    let result = (|| -> Result<usize, String> {
+        let tz = crate::occurrences::timezone(conn);
+        let extra: Vec<String> = crate::domain::identity::scan_exception_slots(conn, tz)?
+            .duplicates
+            .into_iter()
+            .flat_map(|g| g.extra)
+            .collect();
+        if !extra.is_empty() {
+            let archive_id = archive_rows(conn, "exception_dedupe", &extra)?;
+            for id in &extra {
+                delete_lesson_cascade(conn, id)?;
+            }
+            if !crate::domain::identity::scan_exception_slots(conn, tz)?.duplicates.is_empty() {
+                return Err("duplicates remain after cleanup".into());
+            }
+            log_activity(conn, "lesson", "exception_dedupe", None, None, None, None, Some(&extra.len().to_string()), Some(&archive_id));
+        }
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)",
+            params![DEDUPE_MIGRATION_KEY, Utc::now().to_rfc3339()],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(extra.len())
+    })();
+    match result {
+        Ok(n) => {
+            conn.execute_batch("COMMIT").map_err(|e| e.to_string())?;
+            Ok(n)
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
+}
+
 pub(crate) fn archive_rows(
     conn: &Connection,
     action: &str,

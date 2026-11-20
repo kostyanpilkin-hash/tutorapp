@@ -11,7 +11,7 @@ mod overlaps;
 mod repo;
 
 pub(crate) use activity_log::{lesson_with_children, log_activity, log_lesson_diff};
-pub(crate) use archive::{archive_rows, dedupe_exceptions_for_instance};
+pub(crate) use archive::{archive_rows, dedupe_exceptions_for_instance, exception_dedupe_done, run_exception_dedupe_migration};
 pub use archive::{delete_lesson_series_from_instance, restore_lesson_archive};
 pub(crate) use overlaps::{
     exception_row_ids, find_overlaps, find_overlaps_excluding_rows, overlap_error,
@@ -1124,6 +1124,50 @@ mod tests {
         assert!(dedupe_exceptions_for_instance(&conn, "p1", "2026-11-09").is_err());
         conn.execute_batch("ROLLBACK").unwrap();
         assert_eq!(lesson_count(&conn), 5);
+        let archives: i64 = conn.query_row("SELECT COUNT(*) FROM lesson_archive", [], |r| r.get(0)).unwrap();
+        assert_eq!(archives, 0);
+    }
+
+    fn ids(conn: &Connection) -> Vec<String> {
+        conn.prepare("SELECT id FROM lessons ORDER BY id").unwrap()
+            .query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    }
+
+    #[test]
+    fn dedupe_migration_archives_extras_once_and_is_restorable() {
+        let conn = test_conn();
+        insert_student(&conn, "s1", "Ivan");
+        slot_fixture(&conn);
+        conn.execute("INSERT INTO lesson_students (lesson_id, student_id, cost, currency, payment_status) VALUES ('dupB', 's1', 50.0, 'USD', 'paid')", []).unwrap();
+
+        assert_eq!(run_exception_dedupe_migration(&conn).unwrap(), 1);
+        assert_eq!(ids(&conn), ["bad", "dupA", "e16", "p1"]);
+        let fk: i64 = conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0)).unwrap();
+        assert_eq!(fk, 0);
+        let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+        assert_eq!(integrity, "ok");
+
+        // Idempotent: second run is a no-op even if a new duplicate appears.
+        insert_lesson_ex(&conn, "dupC", "Ivan", "2026-11-16T10:00:00Z", "scheduled", None, Some("p1"), Some("2026-11-16T10:00:00Z"));
+        assert_eq!(run_exception_dedupe_migration(&conn).unwrap(), 0);
+        assert!(ids(&conn).contains(&"dupC".to_string()));
+
+        // The archived row comes back with its participant and payment.
+        let archive_id: String = conn.query_row("SELECT id FROM lesson_archive WHERE action = 'exception_dedupe'", [], |r| r.get(0)).unwrap();
+        let pay: String = conn
+            .query_row("SELECT payment_status FROM archived_lesson_students WHERE archive_id = ?1 AND lesson_id = 'dupB'", params![archive_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(pay, "paid");
+    }
+
+    #[test]
+    fn dedupe_migration_failure_changes_nothing() {
+        let conn = test_conn();
+        slot_fixture(&conn);
+        conn.execute_batch("DROP TABLE archived_reminders").unwrap();
+        assert!(run_exception_dedupe_migration(&conn).is_err());
+        assert_eq!(lesson_count(&conn), 5);
+        assert!(!exception_dedupe_done(&conn));
         let archives: i64 = conn.query_row("SELECT COUNT(*) FROM lesson_archive", [], |r| r.get(0)).unwrap();
         assert_eq!(archives, 0);
     }
