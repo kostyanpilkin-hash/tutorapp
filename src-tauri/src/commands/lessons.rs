@@ -749,6 +749,51 @@ mod tests {
         .collect()
     }
 
+    fn member(id: &str, cost: f64, payment: Option<&str>) -> crate::models::LessonStudentInput {
+        crate::models::LessonStudentInput {
+            student_id: id.into(),
+            cost: Some(cost),
+            currency: Some("USD".into()),
+            payment_status: payment.map(String::from),
+        }
+    }
+
+    fn group_debts(conn: &Connection) -> Vec<(String, f64)> {
+        let mut d: Vec<(String, f64)> = crate::commands::finance::debt_lessons(conn)
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.student_id, e.cost))
+            .collect();
+        d.sort_by(|a, b| a.0.cmp(&b.0));
+        d
+    }
+
+    #[test]
+    fn replacement_with_explicit_member_payments_keeps_group_debt() {
+        let conn = test_conn();
+        insert_student(&conn, "A", "Anna");
+        insert_student(&conn, "B", "Boris");
+        insert_lesson(&conn, "g1", "Anna, Boris", "2026-11-02T10:00:00Z", 60, "completed");
+        save_lesson_students(&conn, "g1", &[member("A", 100.0, Some("paid")), member("B", 80.0, Some("unpaid"))], None, None, "unpaid").unwrap();
+        assert_eq!(group_debts(&conn), vec![("B".to_string(), 80.0)]);
+
+        // Notes-only edit: the form now resends each member's stored status.
+        save_lesson_students(&conn, "g1", &[member("A", 100.0, Some("paid")), member("B", 80.0, Some("unpaid"))], None, None, "unpaid").unwrap();
+        assert_eq!(group_debts(&conn), vec![("B".to_string(), 80.0)]);
+    }
+
+    #[test]
+    fn replacement_with_null_member_payment_follows_lesson_status() {
+        // Documented replacement semantics: null = take the lesson-level status.
+        // This is what the form used to send for every edit (F03).
+        let conn = test_conn();
+        insert_student(&conn, "A", "Anna");
+        insert_student(&conn, "B", "Boris");
+        insert_lesson(&conn, "g1", "Anna, Boris", "2026-11-02T10:00:00Z", 60, "completed");
+        save_lesson_students(&conn, "g1", &[member("A", 100.0, None), member("B", 80.0, None)], None, None, "unpaid").unwrap();
+        assert_eq!(group_debts(&conn), vec![("A".to_string(), 100.0), ("B".to_string(), 80.0)]);
+    }
+
     #[test]
     fn expanded_weekly_generates_frontend_ids() {
         let conn = test_conn();

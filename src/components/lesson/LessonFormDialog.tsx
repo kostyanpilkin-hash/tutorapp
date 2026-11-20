@@ -9,6 +9,7 @@ import { CURRENCIES } from "@/lib/money";
 import { formatTimeInTimezone } from "@/lib/contacts";
 import { parseLocalDateTime, realLessonId, isRecurrenceInstance, parentLessonId, WEEKLY_RULE, withUntil, buildWeeklyRule, parseByday, parseUntil, parseCount } from "@/lib/recurrence";
 import { hrefFor, textHasLinks } from "@/lib/linkify";
+import { buildParticipantInputs, templateParticipants } from "@/lib/lessonMutation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { keys, invalidateAppData } from "@/lib/queryKeys";
 import { useShallow } from "zustand/react/shallow";
@@ -309,19 +310,11 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
     if (!lesson) applyStudentDefaults(ids);
   };
 
-  const buildStudentsInput = (): LessonStudentInput[] =>
-    selectedIds.map((id) => {
-      if (customGroupCosts && studentCosts[id]) {
-        const sc = studentCosts[id];
-        return {
-          studentId: id,
-          cost: sc.cost ? Number(sc.cost) : null,
-          currency: sc.cost ? (sc.currency as LessonStudentInput["currency"]) : null,
-          paymentStatus: null,
-        };
-      }
-      return { studentId: id, cost: null, currency: null, paymentStatus: null };
-    });
+  const buildStudentsInput = (payStatus: PaymentStatus): LessonStudentInput[] =>
+    buildParticipantInputs(
+      { selectedIds, customGroupCosts, studentCosts, cost, currency, paymentStatus: payStatus },
+      lesson ?? null,
+    );
 
   const buildRecurrenceRule = (): string | null => {
     if (recurrence !== "weekly") return null;
@@ -339,7 +332,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
     });
   };
 
-  const buildInput = (): LessonInput => {
+  const buildInput = (payStatus: PaymentStatus = paymentStatus): LessonInput => {
     const startAt = parseLocalDateTime(date, time).toISOString();
     const recurrenceRule = buildRecurrenceRule();
     return {
@@ -353,12 +346,12 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       materials,
       materialsLink: materialsLink || null,
       status: status as LessonInput["status"],
-      paymentStatus,
+      paymentStatus: payStatus,
       recurrenceRule,
       recurrenceParentId: lesson?.recurrenceParentId || null,
       recurrenceInstanceDate: lesson?.recurrenceInstanceDate || null,
       color: lesson?.color || null,
-      students: buildStudentsInput(),
+      students: buildStudentsInput(payStatus),
       reminders: reminderValues,
       force: false,
     };
@@ -369,7 +362,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
       setOverlapWarning(t("students.pickRequired"));
       return;
     }
-    const input = { ...buildInput(), paymentStatus: payStatus ?? paymentStatus };
+    const input = buildInput(payStatus ?? paymentStatus);
     const excludeId = !lesson
       ? undefined
       : scope === "all" || scope === "thisAndFuture"
@@ -422,6 +415,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
           });
           await api.createLesson({
             ...input,
+            students: templateParticipants(input.students),
             recurrenceRule: buildRecurrenceRule() || WEEKLY_RULE,
             recurrenceParentId: null,
             recurrenceInstanceDate: null,
@@ -444,6 +438,7 @@ export function LessonFormDialog({ open, lesson, initialDate, initialStudentIds,
           }
           await api.updateLesson(parentId, {
             ...input,
+            students: templateParticipants(input.students),
             startAt: parentStart.toISOString(),
             recurrenceRule: input.recurrenceRule || parent.recurrenceRule || WEEKLY_RULE,
             recurrenceParentId: null,

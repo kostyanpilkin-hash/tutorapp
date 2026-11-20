@@ -283,11 +283,11 @@ API кодирует overlap префиксом строки и глобальн
 **Files:** `LessonFormDialog.tsx`, новый `src/lib/lessonMutation.ts` + `.test.ts`, `commands/lessons/repo.rs` tests.
 **Interfaces:** `buildParticipantInputs(draft: LessonDraft, original: Lesson | null): LessonStudentInput[]`. Для существующего участника сохранять его paymentStatus, пока пользователь явно не менял оплату. Новому — выбранное default. Явный bulk «все оплачено/не оплачено» — отдельное действие draft, не побочный эффект.
 
-- [ ] Test `editing_notes_preserves_mixed_participant_payments`: A paid/100, B unpaid/80, общий unpaid; изменение notes сохраняет A paid, B unpaid и обе цены.
-- [ ] Test `explicit_mark_all_paid_updates_both`, `adding_participant_does_not_reset_existing`, `empty_school_cost_remains_null`.
-- [ ] Выделить сборку payload из JSX, заменить безусловный null. Rust replacement semantics оставить документированными; partial mutation из Task 7 не должен терять поля.
-- [ ] API fixture integration: загрузить группу → сохранить предмет → перечитать → debt только B=80.
-- [ ] `npm test -- lessonMutation` и backend payment tests; общий gate.
+- [x] Test `editing_notes_preserves_mixed_participant_payments`: A paid/100, B unpaid/80, общий unpaid; изменение notes сохраняет A paid, B unpaid и обе цены. (Падал на baseline: 6/7 красных.)
+- [x] Test `explicit_mark_all_paid_updates_both`, `adding_participant_does_not_reset_existing`, `empty_school_cost_remains_null`, плюс `single_student_individual_cost_survives_unrelated_edit` (ls.cost ≠ l.cost после `students_bulk` массовой цены), `series_template_does_not_inherit_one_occurrence_payment`.
+- [x] Выделить сборку payload из JSX, заменить безусловный null. Rust replacement semantics оставить документированными; partial mutation из Task 7 не должен терять поля. Для записи в шаблон серии (thisAndFuture/all) статус участников остаётся null → общий статус, как раньше (Task 6 переделает).
+- [~] API fixture integration: Rust `replacement_with_explicit_member_payments_keeps_group_debt` (save_lesson_students → debt_lessons = только B=80) + `replacement_with_null_member_payment_follows_lesson_status` (документирует старое поведение). Сквозной UI→IPC→DB тест не выполнен — нет утверждённого UI runner.
+- [x] `npm test -- lessonMutation` и backend payment tests; общий gate.
 **Commit:** `fix: preserve group payment state on lesson edits`.
 
 ### Task 4. Session-scoped lifecycle сохранения (F09, F10, F14, F20)
