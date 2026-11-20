@@ -5,6 +5,9 @@ name: Release
 # A latest.json-only mirror is also uploaded to tutorapp_public so that
 # clients <=0.2.2 (whose updater endpoint still points there) can update
 # once and switch to the new endpoint baked into this release.
+permissions:
+  contents: write
+
 on:
   push:
     tags: ["v*"]
