@@ -174,9 +174,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_RELEASES_TOKEN }}
           TAG: ${{ inputs.release_tag || github.ref_name }}
-          MAIN_REPO: kostyanpilkin-hash/tutorapp
           LEGACY_REPO: kostyanpilkin-hash/tutorapp_public
         run: |
           set -euo pipefail
-          gh release download "$TAG" --repo "$MAIN_REPO" --pattern "latest.json" --dir . --clobber
+          # latest.json already exists in this job's workspace — the PAT
+          # has no access to tutorapp, so downloading from there is
+          # impossible anyway; upload the local file.
           gh release upload "$TAG" latest.json --repo "$LEGACY_REPO" --clobber
