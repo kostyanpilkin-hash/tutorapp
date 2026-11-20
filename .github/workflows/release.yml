@@ -120,6 +120,10 @@ jobs:
   # them into a single latest.json so the updater sees all platforms.
   manifest:
     needs: [prepare, build]
+    # can-fail legs report "cancelled", which continue-on-error does not
+    # cover — without always() a cancelled macOS leg skips this job entirely.
+    # If the required Windows leg failed, the missing .sig fails the step.
+    if: always() && needs.prepare.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Assemble and upload latest.json (tutorapp)
